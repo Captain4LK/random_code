@@ -1,8 +1,28 @@
+/*
+Golgotha model convert
+
+Written in 2021 by Lukas Holzbeierlein (Captain4LK) email: captain4lk [at] tutanota [dot] com
+
+To the extent possible under law, the author(s) have dedicated all copyright and related and neighboring rights to this software to the public domain worldwide. This software is distributed without any warranty.
+
+You should have received a copy of the CC0 Public Domain Dedication along with this software. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>. 
+*/
+
+//External includes
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+//-------------------------------------
 
+//Internal includes
+//-------------------------------------
+
+//#defines
+#define MAX_PATH_LENGTH 512
+//-------------------------------------
+
+//Typedefs
 enum 
 {   
   G1_SECTION_MAP_DIMENSIONS_V1,
@@ -65,8 +85,6 @@ enum
 
 };
 
-#define MAX_PATH_LENGTH 512
-
 typedef struct
 {
    uint32_t id;
@@ -124,15 +142,22 @@ typedef struct
 
    Vertex_element **vertices;
 }Header;
+//-------------------------------------
 
+//Variables
 static int pos = 0;
 static char *buffer = NULL;
 static Header h = {0};
+//-------------------------------------
 
+//Function prototypes
 static uint16_t read_u16();
 static uint32_t read_u32();
 static float read_f();
 static uint8_t goto_section(uint32_t section);
+//-------------------------------------
+
+//Function implementations
 
 int main(int argc, char **argv)
 {
@@ -302,3 +327,4 @@ static uint8_t goto_section(uint32_t section)
 
    return 0;
 }
+//-------------------------------------
