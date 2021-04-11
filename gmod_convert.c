@@ -236,9 +236,6 @@ int main(int argc, char **argv)
          {
             h.faces[i].vertices[j].index = read_u16();
 
-            //Failsave
-            if(h.faces[i].vertices[j].index==65535)
-               h.faces[i].vertices[j].index = 0;
             h.faces[i].vertices[j].u = read_f();
             h.faces[i].vertices[j].v = read_f();
             //printf("Vertex index: %d\n",h.faces[i].vertices[j].index);
@@ -345,7 +342,10 @@ int main(int argc, char **argv)
          if(strcmp(h.textures[i].path,l->texture.path)==0)
          {
             fprintf(fobj,"f");
-            for(int j = 0;j<4;j++)
+            int max = 4;
+            if(h.faces[i].vertices[3].index==65535)
+               max = 3;
+            for(int j = 0;j<max;j++)
             {
                fprintf(fobj," %d/%d/%d",h.faces[i].vertices[j].index+1,i*4+j+1,i+1);
             }
