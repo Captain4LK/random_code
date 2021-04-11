@@ -235,6 +235,10 @@ int main(int argc, char **argv)
          for(int j = 0;j<4;j++)
          {
             h.faces[i].vertices[j].index = read_u16();
+
+            //Failsave
+            if(h.faces[i].vertices[j].index==65535)
+               h.faces[i].vertices[j].index = 0;
             h.faces[i].vertices[j].u = read_f();
             h.faces[i].vertices[j].v = read_f();
             //printf("Vertex index: %d\n",h.faces[i].vertices[j].index);
