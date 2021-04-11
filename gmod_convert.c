@@ -13,6 +13,9 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
+
+#define CUTE_PATH_IMPLEMENTATION
+#include "external/cute_path.h"
 //-------------------------------------
 
 //Internal includes
@@ -95,6 +98,7 @@ typedef struct
 {
    uint16_t length;
    char path[MAX_PATH_LENGTH];
+   char name[MAX_PATH_LENGTH];
 }Texture_info;
 
 typedef struct
@@ -142,12 +146,19 @@ typedef struct
 
    Vertex_element **vertices;
 }Header;
+
+typedef struct Textures_list
+{
+   Texture_info texture;
+   struct Textures_list *next;
+}Textures_list;
 //-------------------------------------
 
 //Variables
 static int pos = 0;
 static char *buffer = NULL;
 static Header h = {0};
+static Textures_list *tl = NULL;
 //-------------------------------------
 
 //Function prototypes
@@ -155,6 +166,7 @@ static uint16_t read_u16();
 static uint32_t read_u32();
 static float read_f();
 static uint8_t goto_section(uint32_t section);
+static void add_to_list(Texture_info *inf);
 //-------------------------------------
 
 //Function implementations
@@ -266,29 +278,79 @@ int main(int argc, char **argv)
             h.vertices[i][j].x_normal = read_f();
             h.vertices[i][j].y_normal = read_f();
             h.vertices[i][j].z_normal = read_f();
-            printf("%f %f %f %f %f %f\n",h.vertices[i][j].x_pos,h.vertices[i][j].y_pos,h.vertices[i][j].z_pos,h.vertices[i][j].x_normal,h.vertices[i][j].y_normal,h.vertices[i][j].z_normal);
+            //printf("%f %f %f %f %f %f\n",h.vertices[i][j].x_pos,h.vertices[i][j].y_pos,h.vertices[i][j].z_pos,h.vertices[i][j].x_normal,h.vertices[i][j].y_normal,h.vertices[i][j].z_normal);
          }
       }
    }
    free(buffer);
 
-   //Write to ply format
-   FILE *fout = fopen("out.ply","w");
-   fprintf(fout,"ply\nformat ascii 1.0\n");
-   fprintf(fout,"comment author: Lukas Holzbeierlein\n");
-   fprintf(fout,"comment object: %s\n",argv[1]);
-   fprintf(fout,"element vertex %d\n",h.num_vertices);
-   fprintf(fout,"property float x\nproperty float y\nproperty float z\n");
-   fprintf(fout,"element face %d\n",h.num_faces);
-   fprintf(fout,"property list uchar int vertex_index\n");
-   fprintf(fout,"end_header\n");
-
-   for(int i = 0;i<h.num_vertices;i++)
-      fprintf(fout,"%f %f %f\n",h.vertices[0][i].x_pos,h.vertices[0][i].y_pos,h.vertices[0][i].z_pos);
+   //Convert to obj format
+   char out_name_mtl[MAX_PATH_LENGTH];
+   char out_name_obj[MAX_PATH_LENGTH];
+   char name[MAX_PATH_LENGTH];
+   path_pop(argv[1],NULL,out_name_mtl);
+   path_pop_ext(out_name_mtl,name,NULL);
+   strcpy(out_name_mtl,name);
+   strcpy(out_name_obj,name);
+   strcat(out_name_mtl,".mtl");
+   strcat(out_name_obj,".obj");
+   //Process all textures and add to list
    for(int i = 0;i<h.num_faces;i++)
-      fprintf(fout,"4 %d %d %d %d\n",h.faces[i].vertices[0].index,h.faces[i].vertices[1].index,h.faces[i].vertices[2].index,h.faces[i].vertices[3].index);
+   {
+      path_pop(h.textures[i].path,NULL,h.textures[i].path);
+      char tmp[MAX_PATH_LENGTH];
+      path_pop_ext(h.textures[i].path,h.textures[i].name,NULL);
+      //strcpy(h.textures[i].path,name);
+      //strcat(h.textures[i].path,".jpg");
+      path_concat("textures",h.textures[i].path,tmp,MAX_PATH_LENGTH);
+      path_pop_ext(tmp,tmp,NULL);
+      strcat(tmp,".jpg");
+      strcpy(h.textures[i].path,tmp);
+      add_to_list(&h.textures[i]);
+   }
+   //Write to mtl file
+   FILE *fmtl = fopen(out_name_mtl,"w");
+   fprintf(fmtl,"# Converted from golgotha files by Captain4LK\n\n");
+   Textures_list *l = tl;
+   while(l)
+   {
+      fprintf(fmtl,"newmtl %s\n",l->texture.name);
+      fprintf(fmtl,"Kd 0.800000 0.800000 0.800000\nKa 0.000000 0.000000 0.000000\nKs 0.000000 0.000000 0.000000\n");
+      fprintf(fmtl,"map_Kd %s\n\n",l->texture.path);
+      l = l->next;
+   }
+   fclose(fmtl);
+   //Write to obj file
+   FILE *fobj = fopen(out_name_obj,"w");
+   fprintf(fobj,"mtllib %s\n",out_name_mtl);
+   fprintf(fobj,"o %s\n",name);
+   for(int i = 0;i<h.num_vertices;i++)
+      fprintf(fobj,"v %f %f %f\n",h.vertices[0][i].x_pos,h.vertices[0][i].y_pos,h.vertices[0][i].z_pos);
+   for(int i = 0;i<h.num_faces;i++)
+      for(int j = 0;j<4;j++)
+         fprintf(fobj,"vt %f %f\n",h.faces[i].vertices[j].u,h.faces[i].vertices[j].v);
+   for(int i = 0;i<h.num_faces;i++)
+         fprintf(fobj,"vn %f %f %f\n",h.faces[i].x_normal,h.faces[i].y_normal,h.faces[i].z_normal);
 
-   fclose(fout);
+   l = tl;
+   while(l)
+   {
+      fprintf(fobj,"usemtl %s\ns off\n",l->texture.name);
+      for(int i = 0;i<h.num_faces;i++)
+      {
+         if(strcmp(h.textures[i].path,l->texture.path)==0)
+         {
+            fprintf(fobj,"f");
+            for(int j = 0;j<4;j++)
+            {
+               fprintf(fobj," %d/%d/%d",h.faces[i].vertices[j].index+1,i*4+j+1,i+1);
+            }
+            fprintf(fobj,"\n");
+         }
+      }
+      l = l->next;
+   }
+   fclose(fobj);
 
    return 0;
 }
@@ -326,5 +388,30 @@ static uint8_t goto_section(uint32_t section)
    }
 
    return 0;
+}
+
+static void add_to_list(Texture_info *inf)
+{
+   if(tl==NULL)
+   {
+      Textures_list *l = malloc(sizeof(*l));
+      l->texture = *inf;
+      l->next = tl;
+      tl = l;
+      return;
+   }
+
+   Textures_list *l = tl;
+   while(l)
+   {
+      if(strcmp(l->texture.path,inf->path)==0)
+         return;
+      l = l->next;
+   }
+
+   Textures_list *n = malloc(sizeof(*n));
+   n->texture = *inf;
+   n->next = tl;
+   tl = n;
 }
 //-------------------------------------
