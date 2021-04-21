@@ -1,5 +1,5 @@
 /*
-Golgotha model convert
+Golgotha model converter
 
 Written in 2021 by Lukas Holzbeierlein (Captain4LK) email: captain4lk [at] tutanota [dot] com
 
