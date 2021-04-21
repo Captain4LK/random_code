@@ -174,8 +174,12 @@ static void add_to_list(Texture_info *inf);
 int main(int argc, char **argv)
 {
    if(argc<2)
-      exit(-1);
+   {
+      printf("Convert golgotha models to wavefront fileformat\nUsage: %s [GMOD FILE PATH]\n",argv[0]);
+      return 0;
+   }
 
+   //Read file to memory
    FILE *f = fopen(argv[1],"rb");
    int size = 0;
    fseek(f,0,SEEK_END);
@@ -186,6 +190,7 @@ int main(int argc, char **argv)
    buffer[size] = 0;
    fclose(f);
 
+   //Read header
    pos = 0;
    h.number = read_u32();
    h.num_sections = read_u32();
@@ -238,7 +243,6 @@ int main(int argc, char **argv)
 
             h.faces[i].vertices[j].u = read_f();
             h.faces[i].vertices[j].v = read_f();
-            //printf("Vertex index: %d\n",h.faces[i].vertices[j].index);
          }
          h.faces[i].scale = read_f();
          h.faces[i].flags = read_u16();
@@ -279,13 +283,12 @@ int main(int argc, char **argv)
             h.vertices[i][j].x_normal = read_f();
             h.vertices[i][j].y_normal = read_f();
             h.vertices[i][j].z_normal = read_f();
-            //printf("%f %f %f %f %f %f\n",h.vertices[i][j].x_pos,h.vertices[i][j].y_pos,h.vertices[i][j].z_pos,h.vertices[i][j].x_normal,h.vertices[i][j].y_normal,h.vertices[i][j].z_normal);
          }
       }
    }
    free(buffer);
 
-   //Convert to obj format
+   //Format output paths
    char out_name_mtl[MAX_PATH_LENGTH];
    char out_name_obj[MAX_PATH_LENGTH];
    char name[MAX_PATH_LENGTH];
@@ -295,20 +298,20 @@ int main(int argc, char **argv)
    strcpy(out_name_obj,name);
    strcat(out_name_mtl,".mtl");
    strcat(out_name_obj,".obj");
+
    //Process all textures and add to list
    for(int i = 0;i<h.num_faces;i++)
    {
       path_pop(h.textures[i].path,NULL,h.textures[i].path);
       char tmp[MAX_PATH_LENGTH];
       path_pop_ext(h.textures[i].path,h.textures[i].name,NULL);
-      //strcpy(h.textures[i].path,name);
-      //strcat(h.textures[i].path,".jpg");
       path_concat("textures",h.textures[i].path,tmp,MAX_PATH_LENGTH);
       path_pop_ext(tmp,tmp,NULL);
       strcat(tmp,".jpg");
       strcpy(h.textures[i].path,tmp);
       add_to_list(&h.textures[i]);
    }
+
    //Write to mtl file
    FILE *fmtl = fopen(out_name_mtl,"w");
    fprintf(fmtl,"# Converted from golgotha files by Captain4LK\n\n");
@@ -321,6 +324,7 @@ int main(int argc, char **argv)
       l = l->next;
    }
    fclose(fmtl);
+
    //Write to obj file
    FILE *fobj = fopen(out_name_obj,"w");
    fprintf(fobj,"mtllib %s\n",out_name_mtl);
@@ -332,7 +336,6 @@ int main(int argc, char **argv)
          fprintf(fobj,"vt %f %f\n",h.faces[i].vertices[j].u,h.faces[i].vertices[j].v);
    for(int i = 0;i<h.num_faces;i++)
          fprintf(fobj,"vn %f %f %f\n",h.faces[i].x_normal,h.faces[i].y_normal,h.faces[i].z_normal);
-
    l = tl;
    while(l)
    {
