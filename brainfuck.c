@@ -23,21 +23,11 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 #define MEM_SIZE 16777216
 
 //Universal dynamic array
-typedef struct
-{
-   uint32_t used;
-   uint32_t size;
-   void *data;
-}dyn_array;
-
 #define dyn_array_init(type, array, space) \
    do { dyn_array_free(type, (array)); ((dyn_array *)(array))->size = (space); ((dyn_array *)(array))->used = 0; ((dyn_array *)(array))->data = malloc(sizeof(type)*(((dyn_array *)(array))->size)); } while(0)
 
 #define dyn_array_free(type, array) \
    do { if(((dyn_array *)(array))->data) { free(((dyn_array *)(array))->data); ((dyn_array *)(array))->data = NULL; ((dyn_array *)(array))->used = 0; ((dyn_array *)(array))->size = 0; }} while(0)
-
-#define dyn_array_clear(type, array) \
-   do { ((dyn_array *)(array))->used = 0; } while(0)
 
 #define dyn_array_add(type, array, grow, element) \
    do { ((type *)((dyn_array *)(array)->data))[((dyn_array *)(array))->used] = element; ((dyn_array *)(array))->used++; if(((dyn_array *)(array))->used==((dyn_array *)(array))->size) { ((dyn_array *)(array))->size+=grow; ((dyn_array *)(array))->data = realloc(((dyn_array *)(array))->data,sizeof(type)*(((dyn_array *)(array))->size)); } } while(0)
@@ -50,10 +40,7 @@ typedef struct
 typedef enum 
 {
    INSTR_NONE = 0,
-   PTR_PLUS = 1, PTR_MINUS = 2,
-   VAL_PLUS = 3, VAL_MINUS = 4,
-   GET_VAL = 5, PUT_VAL = 6,
-   WHILE_START = 7, WHILE_END = 8,
+   PTR, VAL, GET_VAL, PUT_VAL, WHILE_START, WHILE_END,
 }Opcode;
 
 typedef struct
@@ -62,22 +49,17 @@ typedef struct
    int arg;
 }Instruction;
 
-typedef struct Stack
+typedef struct
 {
-   int ptr;
-   struct Stack *next; 
-}Stack;
+   uint32_t used;
+   uint32_t size;
+   void *data;
+}dyn_array;
 //-------------------------------------
 
 //Variables
 static uint8_t mem[MEM_SIZE] = {0};
 static uint8_t *ptr = mem;
-
-static Stack *stack = NULL;
-static Stack *stack_reserve = NULL;
-
-//"Pointers" to all procedures
-static int proc_table[256];
 
 //Resizing buffer for instructions
 static unsigned instr_ptr = 0; //Index to instr
@@ -87,8 +69,7 @@ static Instruction *instr = NULL;
 
 //Function prototypes
 static void preprocess(FILE *in);
-static inline void stack_push(int iptr);
-static inline int stack_pull();
+static void optimize();
 //-------------------------------------
 
 //Function implementations
@@ -121,11 +102,8 @@ int main(int argc, char *argv[])
    FILE *in = fopen(path,"r");
    preprocess(in);
    fclose(in);
+   optimize();
 
-   //Initialize procedure memory
-   for(int i = 0;i<256;i++)
-      proc_table[i] = -1;
-      
    //Run code
    FILE *input = stdin;
    if(io_path!=NULL)
@@ -137,29 +115,12 @@ int main(int argc, char *argv[])
       switch(instr[instr_ptr].opc)
       {
       case INSTR_NONE: instr_ptr++; break;
-      case PTR_PLUS: ptr+=instr[instr_ptr].arg; instr_ptr++; break;
-      case PTR_MINUS: ptr-=instr[instr_ptr].arg; instr_ptr++; break;
-      case VAL_PLUS: *ptr+=instr[instr_ptr].arg; instr_ptr++; break;
-      case VAL_MINUS: *ptr-=instr[instr_ptr].arg; instr_ptr++; break;
+      case PTR: ptr+=instr[instr_ptr].arg; instr_ptr++; break;
+      case VAL: *ptr+=instr[instr_ptr].arg; instr_ptr++; break;
       case GET_VAL: *ptr = fgetc(input);instr_ptr++; break;
       case PUT_VAL: putchar(*ptr); instr_ptr++; fflush(stdout); break;
-      case WHILE_END: instr_ptr = stack_pull(); break;
-      case WHILE_START:
-         stack_push(instr_ptr);
-         instr_ptr++;
-         if(!(*ptr))
-         {
-            instr_ptr = stack_pull();
-            int balance = 1;
-            while(balance) 
-            {
-               instr_ptr++;
-               if(instr[instr_ptr].opc==WHILE_START) balance++;
-               else if(instr[instr_ptr].opc==WHILE_END) balance--;
-            }
-            instr_ptr++;
-         }
-         break;
+      case WHILE_START: if(!(*ptr)) instr_ptr = instr[instr_ptr].arg; instr_ptr++; break;
+      case WHILE_END: instr_ptr = instr[instr_ptr].arg;
       }
    }
    printf("Time taken: %lf\n",(double)(clock()-start)/CLOCKS_PER_SEC);
@@ -176,10 +137,10 @@ static void preprocess(FILE *in)
       Instruction next = {0};
       switch(c)
       {
-      case '>': next.opc = PTR_PLUS; next.arg = 1; break;
-      case '<': next.opc = PTR_MINUS; next.arg = 1;break;
-      case '+': next.opc = VAL_PLUS; next.arg = 1;break;
-      case '-': next.opc = VAL_MINUS; next.arg = 1;break;
+      case '>': next.opc = PTR; next.arg = 1; break;
+      case '<': next.opc = PTR; next.arg = -1;break;
+      case '+': next.opc = VAL; next.arg = 1;break;
+      case '-': next.opc = VAL; next.arg = -1;break;
       case ',': next.opc = GET_VAL; break;
       case '.': next.opc = PUT_VAL; break;
       case '[': next.opc = WHILE_START; break;
@@ -192,37 +153,60 @@ static void preprocess(FILE *in)
    instr = (Instruction *)instr_array.data;
 }
 
-//Only allocates memory if nothing is 
-//stored on the stack reserve.
-static inline void stack_push(int iptr)
+static void optimize()
 {
-   if(stack_reserve==NULL)
-   {
-      Stack *s = malloc(sizeof(*s));
-      s->ptr = iptr;
-      s->next = stack;
-      stack = s;
+   dyn_array old = instr_array;
+   dyn_array_init(Instruction,&instr_array,256);
 
-      return;
+   int i = 0;
+   int end = old.used;
+   while(i<end)
+   {
+      switch(instr[i].opc)
+      {
+      //Non optimized instructions
+      case INSTR_NONE: i++; break;
+      case GET_VAL: dyn_array_add(Instruction,&instr_array,256,instr[i]); i++; break;
+      case PUT_VAL: dyn_array_add(Instruction,&instr_array,256,instr[i]); i++; break;
+      case WHILE_START: dyn_array_add(Instruction,&instr_array,256,instr[i]); i++; break;
+
+      //Optimized instructions
+      case WHILE_END:
+         {
+            int sptr = instr_array.used;
+            int balance = -1;
+            while(balance) 
+            {
+               sptr--;
+               if(((Instruction *)instr_array.data)[sptr].opc==WHILE_START) balance++;
+               else if(((Instruction *)instr_array.data)[sptr].opc==WHILE_END) balance--;
+            }
+            dyn_array_add(Instruction,&instr_array,256,instr[i]);
+            (&dyn_array_element(Instruction,&instr_array,sptr))->arg = instr_array.used-1;
+            (&dyn_array_element(Instruction,&instr_array,instr_array.used-1))->arg = sptr;
+            i++;
+         }
+         break;
+      case PTR:
+         {
+            int arg = 0;
+            while(instr[i].opc==PTR) { arg+=instr[i].arg; i++; }
+            Instruction in = {.opc = PTR, .arg = arg};
+            dyn_array_add(Instruction,&instr_array,256,in);
+         }
+         break;
+      case VAL:
+         {
+            int arg = 0;
+            while(instr[i].opc==VAL) { arg+=instr[i].arg; i++; }
+            Instruction in = {.opc = VAL, .arg = arg};
+            dyn_array_add(Instruction,&instr_array,256,in);
+         }
+         break;
+      }
    }
 
-   Stack *s = stack_reserve;
-   stack_reserve = s->next;
-   s->ptr = iptr;
-   s->next = stack;
-   stack = s;
-}
-
-//Instead of freeing unused memory, it gets
-//stored on a second stack and used for the next push 
-//instead of allocating new memory.
-static inline int stack_pull()
-{
-   Stack *s = stack;
-   stack = s->next;
-   s->next = stack_reserve;
-   stack_reserve = s;
-
-   return s->ptr;
+   printf("Optimization overview:\n\tInput length: %d\n\tOutput length: %d\n",old.used,instr_array.used);
+   instr = (Instruction *)instr_array.data;
 }
 //-------------------------------------
