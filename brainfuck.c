@@ -12,6 +12,7 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <time.h>
 //-------------------------------------
 
 //Internal includes
@@ -130,6 +131,7 @@ int main(int argc, char *argv[])
    if(io_path!=NULL)
       input = fopen(io_path,"r");
 
+   clock_t start = clock();
    while(instr_ptr<instr_array.used)
    {
       switch(instr[instr_ptr].opc)
@@ -140,7 +142,7 @@ int main(int argc, char *argv[])
       case VAL_PLUS: *ptr+=instr[instr_ptr].arg; instr_ptr++; break;
       case VAL_MINUS: *ptr-=instr[instr_ptr].arg; instr_ptr++; break;
       case GET_VAL: *ptr = fgetc(input);instr_ptr++; break;
-      case PUT_VAL: putchar(*ptr); instr_ptr++; break;
+      case PUT_VAL: putchar(*ptr); instr_ptr++; fflush(stdout); break;
       case WHILE_END: instr_ptr = stack_pull(); break;
       case WHILE_START:
          stack_push(instr_ptr);
@@ -159,8 +161,8 @@ int main(int argc, char *argv[])
          }
          break;
       }
-      fflush(stdout);
    }
+   printf("Time taken: %lf\n",(double)(clock()-start)/CLOCKS_PER_SEC);
 
    return 0;
 }
