@@ -19,8 +19,7 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 //-------------------------------------
 
 //#defines
-//2^24
-#define MEM_SIZE 16777216
+#define MEM_SIZE (1<<24)
 
 //Universal dynamic array
 #define dyn_array_init(type, array, space) \
@@ -39,8 +38,7 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 //Typedefs
 typedef enum 
 {
-   INSTR_NONE = 0,
-   PTR, VAL, GET_VAL, PUT_VAL, WHILE_START, WHILE_END,
+   PTR = 1, VAL = 2, GET_VAL = 3, PUT_VAL = 4, WHILE_START = 5, WHILE_END = 6,
 }Opcode;
 
 typedef struct
@@ -114,13 +112,12 @@ int main(int argc, char *argv[])
    {
       switch(instr[instr_ptr].opc)
       {
-      case INSTR_NONE: instr_ptr++; break;
       case PTR: ptr+=instr[instr_ptr].arg; instr_ptr++; break;
       case VAL: *ptr+=instr[instr_ptr].arg; instr_ptr++; break;
-      case GET_VAL: *ptr = fgetc(input);instr_ptr++; break;
+      case GET_VAL: *ptr = fgetc(input); instr_ptr++; break;
       case PUT_VAL: putchar(*ptr); instr_ptr++; fflush(stdout); break;
       case WHILE_START: if(!(*ptr)) instr_ptr = instr[instr_ptr].arg; instr_ptr++; break;
-      case WHILE_END: instr_ptr = instr[instr_ptr].arg;
+      case WHILE_END: instr_ptr = instr[instr_ptr].arg; break;
       }
    }
    printf("Time taken: %lf\n",(double)(clock()-start)/CLOCKS_PER_SEC);
@@ -165,7 +162,6 @@ static void optimize()
       switch(instr[i].opc)
       {
       //Non optimized instructions
-      case INSTR_NONE: i++; break;
       case GET_VAL: dyn_array_add(Instruction,&instr_array,256,instr[i]); i++; break;
       case PUT_VAL: dyn_array_add(Instruction,&instr_array,256,instr[i]); i++; break;
       case WHILE_START: dyn_array_add(Instruction,&instr_array,256,instr[i]); i++; break;
