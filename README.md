@@ -9,3 +9,7 @@ A simple brainfuck interpreter
 ## gmod_convert.c
 
 On October 22, 2000, Golgotha was released to the Public Domain. The 3d models included were however distributed in a custom format, incompatible with modern software. This small C program converts the .gmod files to the wavefront format.
+
+## steganography.c
+
+Hide data in png files
