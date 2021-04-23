@@ -11,8 +11,8 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 //External includes
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <stdint.h>
-#include <time.h>
 
 #define CUTE_PATH_IMPLEMENTATION
 #include "external/cute_path.h"
