@@ -334,8 +334,8 @@ int main(int argc, char **argv)
    for(int i = 0;i<h.num_faces;i++)
       for(int j = 0;j<4;j++)
          fprintf(fobj,"vt %f %f\n",h.faces[i].vertices[j].u,h.faces[i].vertices[j].v);
-   for(int i = 0;i<h.num_faces;i++)
-         fprintf(fobj,"vn %f %f %f\n",h.faces[i].x_normal,h.faces[i].y_normal,h.faces[i].z_normal);
+   for(int i = 0;i<h.num_vertices;i++)
+      fprintf(fobj,"vn %f %f %f\n",h.vertices[0][i].x_normal,h.vertices[0][i].y_normal,h.vertices[0][i].z_normal);
    l = tl;
    while(l)
    {
@@ -350,7 +350,7 @@ int main(int argc, char **argv)
                max = 3;
             for(int j = 0;j<max;j++)
             {
-               fprintf(fobj," %d/%d/%d",h.faces[i].vertices[j].index+1,i*4+j+1,i+1);
+               fprintf(fobj," %d/%d/%d",h.faces[i].vertices[j].index+1,i*4+j+1,h.faces[i].vertices[j].index+1);
             }
             fprintf(fobj,"\n");
          }
