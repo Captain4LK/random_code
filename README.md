@@ -17,3 +17,8 @@ Hide data in png files
 ## file formats
 
 Collection of single header libs for various file formats
+
+|Library|Description|
+|---|---|
+|[pal](file_formats/pal.h)|Corax palette format|
+|[json](file_formats/json.h)|Json parser and writer|
