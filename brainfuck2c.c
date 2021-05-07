@@ -1,5 +1,5 @@
 /*
-brainfuck interpreter
+brainfuck to c compiler
 
 Written in 2021 by Lukas Holzbeierlein (Captain4LK) email: captain4lk [at] tutanota [dot] com
 
@@ -32,6 +32,9 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 
 #define dyn_array_element(type, array, index) \
    (((type *)((dyn_array *)(array)->data))[index])
+
+#define PRINT_INDENT(a) \
+ for(int print_indent_o = 0;print_indent_o<(a);print_indent_o++) fprintf(out,"   ");
 //-------------------------------------
 
 //Typedefs
@@ -55,11 +58,7 @@ typedef struct
 //-------------------------------------
 
 //Variables
-static uint8_t mem[MEM_SIZE] = {0};
-static uint8_t *ptr = mem;
-
 //Resizing buffer for instructions
-static unsigned instr_ptr = 0; //Index to instr
 static dyn_array instr_array = {0};
 static Instruction *instr = NULL;
 //-------------------------------------
@@ -75,16 +74,16 @@ int main(int argc, char *argv[])
 {
    //Parse cmd arguments
    const char *path = NULL;
-   const char *io_path = NULL;
+   const char *path_out = NULL;
    for(int i = 1;i<argc;i++)
    {
       if(argv[i][0]=='-')
       {
          switch(argv[i][1])
          {
-         case 'h': puts("brainfuck interpreter\nAvailible commandline options:\n\t-h\t\tprint this text\n\t-f [PATH]\tspecify the file to execute\n\t-i [PATH]\tspecify the file to use as input"); break;
-         case 'f': path = argv[++i]; break;
-         case 'i':  io_path = argv[++i]; break;
+         case 'h': puts("brainfuck to c compiler\nAvailible commandline options:\n\t-h\t\tprint this text\n\t-i [PATH]\tspecify the file to compile\n\t-o [PATH]\tspecify the output path"); break;
+         case 'i': path = argv[++i]; break;
+         case 'o': path_out = argv[++i]; break;
          }
       }
    }
@@ -101,23 +100,27 @@ int main(int argc, char *argv[])
    fclose(in);
    optimize();
 
-   //Run code
-   FILE *input = stdin;
-   if(io_path!=NULL)
-      input = fopen(io_path,"r");
-
-   while(instr_ptr<instr_array.used)
+   //'Compile' code
+   FILE *out = stdout;
+   if(path_out!=NULL)
+      out = fopen(path_out,"w");
+   fprintf(out,"#include <stdio.h>\n#include <stdint.h>\n\nuint8_t mem[%d];\nuint8_t *ptr = mem;\n\nint main(int argc, char **argv)\n{\n   FILE *in = stdin;\n   if(argc>1)\n      in = fopen(argv[1],\"r\");\n\n",MEM_SIZE);
+   int indent = 1;
+   for(int i = 0;i<instr_array.used;i++)
    {
-      switch(instr[instr_ptr].opc)
+      switch(instr[i].opc)
       {
-      case PTR: ptr+=instr[instr_ptr].arg; instr_ptr++; break;
-      case VAL: *ptr+=instr[instr_ptr].arg; instr_ptr++; break;
-      case GET_VAL: *ptr = fgetc(input); instr_ptr++; break;
-      case PUT_VAL: putchar(*ptr); instr_ptr++; fflush(stdout); break;
-      case WHILE_START: if(!(*ptr)) instr_ptr = instr[instr_ptr].arg; instr_ptr++; break;
-      case WHILE_END: instr_ptr = instr[instr_ptr].arg; break;
+      case PTR: PRINT_INDENT(indent); fprintf(out,"ptr+=%d;\n",instr[i].arg); break;
+      case VAL: PRINT_INDENT(indent); fprintf(out,"*ptr+=%d;\n",instr[i].arg); break;
+      case GET_VAL: PRINT_INDENT(indent); fprintf(out,"*ptr = fgetc(in);\n"); break;
+      case PUT_VAL: PRINT_INDENT(indent); fprintf(out,"putchar(*ptr);\n"); break;
+      case WHILE_START: PRINT_INDENT(indent); fprintf(out,"while(*ptr)\n"); PRINT_INDENT(indent); fprintf(out,"{\n"); indent++; break;
+      case WHILE_END: indent--; PRINT_INDENT(indent); fprintf(out,"}\n"); break;
       }
    }
+   fprintf(out,"\n   if(argc>1)\n      fclose(in);\n   return 0;\n}");
+   if(path_out!=NULL)
+      fclose(out);
    dyn_array_free(Instruction,&instr_array);
 
    return 0;
@@ -163,24 +166,9 @@ static void optimize()
       case GET_VAL: dyn_array_add(Instruction,&instr_array,256,instr[i]); i++; break;
       case PUT_VAL: dyn_array_add(Instruction,&instr_array,256,instr[i]); i++; break;
       case WHILE_START: dyn_array_add(Instruction,&instr_array,256,instr[i]); i++; break;
+      case WHILE_END: dyn_array_add(Instruction,&instr_array,256,instr[i]); i++; break;
 
       //Optimized instructions
-      case WHILE_END:
-         {
-            int sptr = instr_array.used;
-            int balance = -1;
-            while(balance) 
-            {
-               sptr--;
-               if(((Instruction *)instr_array.data)[sptr].opc==WHILE_START) balance++;
-               else if(((Instruction *)instr_array.data)[sptr].opc==WHILE_END) balance--;
-            }
-            dyn_array_add(Instruction,&instr_array,256,instr[i]);
-            (&dyn_array_element(Instruction,&instr_array,sptr))->arg = instr_array.used-1;
-            (&dyn_array_element(Instruction,&instr_array,instr_array.used-1))->arg = sptr;
-            i++;
-         }
-         break;
       case PTR:
          {
             int arg = 0;

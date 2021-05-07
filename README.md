@@ -4,7 +4,11 @@ Collection of random, small code (snippets) I wrote over time. All code in this 
 
 ## brainfuck.c
 
-A simple brainfuck interpreter
+A brainfuck interpreter
+
+## brainfuck2c.c
+
+A brainfuck to c compiler
 
 ## gmod_convert.c
 
