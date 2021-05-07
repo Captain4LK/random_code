@@ -121,6 +121,7 @@ int main(int argc, char *argv[])
       }
    }
    printf("Time taken: %lf\n",(double)(clock()-start)/CLOCKS_PER_SEC);
+   dyn_array_free(Instruction,&instr_array);
 
    return 0;
 }
