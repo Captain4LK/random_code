@@ -23,7 +23,7 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 
 //Universal dynamic array
 #define dyn_array_init(type, array, space) \
-   do { dyn_array_free(type, (array)); ((dyn_array *)(array))->size = (space); ((dyn_array *)(array))->used = 0; ((dyn_array *)(array))->data = malloc(sizeof(type)*(((dyn_array *)(array))->size)); } while(0)
+   do { ((dyn_array *)(array))->size = (space); ((dyn_array *)(array))->used = 0; ((dyn_array *)(array))->data = malloc(sizeof(type)*(((dyn_array *)(array))->size)); } while(0)
 
 #define dyn_array_free(type, array) \
    do { if(((dyn_array *)(array))->data) { free(((dyn_array *)(array))->data); ((dyn_array *)(array))->data = NULL; ((dyn_array *)(array))->used = 0; ((dyn_array *)(array))->size = 0; }} while(0)
@@ -202,6 +202,7 @@ static void optimize()
       }
    }
 
+   dyn_array_free(Instruction,&old);
    printf("Optimization overview:\n\tInput length: %d\n\tOutput length: %d\n",old.used,instr_array.used);
    instr = (Instruction *)instr_array.data;
 }
