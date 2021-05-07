@@ -28,7 +28,7 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
    do { if(((dyn_array *)(array))->data) { free(((dyn_array *)(array))->data); ((dyn_array *)(array))->data = NULL; ((dyn_array *)(array))->used = 0; ((dyn_array *)(array))->size = 0; }} while(0)
 
 #define dyn_array_add(type, array, grow, element) \
-   do { ((type *)((dyn_array *)(array)->data))[((dyn_array *)(array))->used] = element; ((dyn_array *)(array))->used++; if(((dyn_array *)(array))->used==((dyn_array *)(array))->size) { ((dyn_array *)(array))->size+=grow; ((dyn_array *)(array))->data = realloc(((dyn_array *)(array))->data,sizeof(type)*(((dyn_array *)(array))->size)); } } while(0)
+   do { ((type *)((dyn_array *)(array)->data))[((dyn_array *)(array))->used] = (element); ((dyn_array *)(array))->used++; if(((dyn_array *)(array))->used==((dyn_array *)(array))->size) { ((dyn_array *)(array))->size+=grow; ((dyn_array *)(array))->data = realloc(((dyn_array *)(array))->data,sizeof(type)*(((dyn_array *)(array))->size)); } } while(0)
 
 #define dyn_array_element(type, array, index) \
    (((type *)((dyn_array *)(array)->data))[index])
@@ -37,13 +37,15 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 //Typedefs
 typedef enum 
 {
-   PTR = 1, VAL = 2, GET_VAL = 3, PUT_VAL = 4, WHILE_START = 5, WHILE_END = 6,
+   PTR = 1, VAL = 2, GET_VAL = 3, PUT_VAL = 4, WHILE_START = 5, WHILE_END = 6, CLEAR = 7,
 }Opcode;
 
 typedef struct
 {
    Opcode opc;
-   int arg;
+   int arg0;
+   int arg1;
+   int offset;
 }Instruction;
 
 typedef struct
@@ -110,12 +112,13 @@ int main(int argc, char *argv[])
    {
       switch(instr[instr_ptr].opc)
       {
-      case PTR: ptr+=instr[instr_ptr].arg; instr_ptr++; break;
-      case VAL: *ptr+=instr[instr_ptr].arg; instr_ptr++; break;
-      case GET_VAL: *ptr = fgetc(input); instr_ptr++; break;
-      case PUT_VAL: putchar(*ptr); instr_ptr++; fflush(stdout); break;
-      case WHILE_START: if(!(*ptr)) instr_ptr = instr[instr_ptr].arg; instr_ptr++; break;
-      case WHILE_END: instr_ptr = instr[instr_ptr].arg; break;
+      case PTR: ptr+=instr[instr_ptr].arg0; instr_ptr++; break;
+      case VAL: *(ptr+instr[instr_ptr].offset)+=instr[instr_ptr].arg0; instr_ptr++; break;
+      case GET_VAL: *(ptr+instr[instr_ptr].offset) = fgetc(input); instr_ptr++; break;
+      case PUT_VAL: putchar(*(ptr+instr[instr_ptr].offset)); instr_ptr++; fflush(stdout); break;
+      case WHILE_START: if(!(*ptr)) instr_ptr = instr[instr_ptr].arg0; instr_ptr++; break;
+      case WHILE_END: instr_ptr = instr[instr_ptr].arg0; break;
+      case CLEAR: *(ptr+instr[instr_ptr].offset) = 0; instr_ptr++; break;
       }
    }
    dyn_array_free(Instruction,&instr_array);
@@ -132,10 +135,10 @@ static void preprocess(FILE *in)
       Instruction next = {0};
       switch(c)
       {
-      case '>': next.opc = PTR; next.arg = 1; break;
-      case '<': next.opc = PTR; next.arg = -1;break;
-      case '+': next.opc = VAL; next.arg = 1;break;
-      case '-': next.opc = VAL; next.arg = -1;break;
+      case '>': next.opc = PTR; next.arg0 = 1; break;
+      case '<': next.opc = PTR; next.arg0 = -1;break;
+      case '+': next.opc = VAL; next.arg0 = 1;break;
+      case '-': next.opc = VAL; next.arg0 = -1;break;
       case ',': next.opc = GET_VAL; break;
       case '.': next.opc = PUT_VAL; break;
       case '[': next.opc = WHILE_START; break;
@@ -150,6 +153,12 @@ static void preprocess(FILE *in)
 
 static void optimize()
 {
+   int input_len = instr_array.used;
+
+   //Pass 1 --> rle
+   //Additions and subtractions of pointer/value
+   //get rle encoded
+   //i.e.: +++++++ gets converted to *ptr+=7
    dyn_array old = instr_array;
    dyn_array_init(Instruction,&instr_array,256);
 
@@ -159,12 +168,92 @@ static void optimize()
    {
       switch(instr[i].opc)
       {
-      //Non optimized instructions
-      case GET_VAL: dyn_array_add(Instruction,&instr_array,256,instr[i]); i++; break;
-      case PUT_VAL: dyn_array_add(Instruction,&instr_array,256,instr[i]); i++; break;
-      case WHILE_START: dyn_array_add(Instruction,&instr_array,256,instr[i]); i++; break;
+      case PTR:
+         {
+            int arg = 0;
+            while(instr[i].opc==PTR) { arg+=instr[i].arg0; i++; }
+            Instruction in = {.opc = PTR, .arg0 = arg, .offset = 0};
+            dyn_array_add(Instruction,&instr_array,256,in);
+         }
+         break;
+      case VAL:
+         {
+            int arg = 0;
+            while(instr[i].opc==VAL) { arg+=instr[i].arg0; i++; }
+            Instruction in = {.opc = VAL, .arg0 = arg, .offset = 0};
+            dyn_array_add(Instruction,&instr_array,256,in);
+         }
+         break;
+      default: dyn_array_add(Instruction,&instr_array,256,instr[i]); i++; break;
+      }
+   }
+   dyn_array_free(Instruction,&old);
+   instr = (Instruction *)instr_array.data;
+   //-------------------------------------
 
-      //Optimized instructions
+   //Pass 2 --> common patterns
+   old = instr_array;
+   dyn_array_init(Instruction,&instr_array,256);
+   i = 0;
+   end = old.used;
+   while(i<end)
+   {
+      //Pattern clear
+      if(i<old.used-2&&instr[i].opc==WHILE_START&&instr[i+1].opc==VAL&&instr[i+2].opc==WHILE_END)
+      {
+         Instruction ni = {.opc = CLEAR, .arg0 = 0, .offset = 0};
+         dyn_array_add(Instruction,&instr_array,256,ni);
+         i+=3;
+      }
+      else
+      {
+         dyn_array_add(Instruction,&instr_array,256,instr[i]); i++;
+      }
+   }
+   dyn_array_free(Instruction,&old);
+   instr = (Instruction *)instr_array.data;
+   //-------------------------------------
+
+   //Pass 3 --> offsets
+   old = instr_array;
+   dyn_array_init(Instruction,&instr_array,256);
+   i = 0;
+   end = old.used;
+   while(i<end)
+   {
+      //Offset add
+      if(i<old.used-2&&
+         instr[i].opc==PTR&&instr[i+2].opc==PTR&&
+         instr[i].arg0==-instr[i+2].arg0)
+      {
+         Instruction ni;
+         switch(instr[i+1].opc)
+         {
+         case VAL: ni = (Instruction){.opc = VAL, .arg0 = instr[i+1].arg0, .offset = instr[i].arg0}; dyn_array_add(Instruction,&instr_array,256,ni); i+=3; break;
+         case CLEAR: ni = (Instruction){.opc = CLEAR, .offset = instr[i].arg0}; dyn_array_add(Instruction,&instr_array,256,ni); i+=3; break;
+         case PUT_VAL: ni = (Instruction){.opc = PUT_VAL, .offset = instr[i].arg0}; dyn_array_add(Instruction,&instr_array,256,ni); i+=3; break;
+         case GET_VAL: ni = (Instruction){.opc = GET_VAL, .offset = instr[i].arg0}; dyn_array_add(Instruction,&instr_array,256,ni); i+=3; break;
+         default: dyn_array_add(Instruction,&instr_array,256,instr[i]); i++; break;
+         }
+      }
+      else
+      {
+         dyn_array_add(Instruction,&instr_array,256,instr[i]); i++;
+      }
+   }
+   dyn_array_free(Instruction,&old);
+   instr = (Instruction *)instr_array.data;
+   //-------------------------------------
+
+   //Pass 4 --> while
+   old = instr_array;
+   dyn_array_init(Instruction,&instr_array,256);
+   i = 0;
+   end = old.used;
+   while(i<end)
+   {
+      switch(instr[i].opc)
+      {
       case WHILE_END:
          {
             int sptr = instr_array.used;
@@ -176,32 +265,18 @@ static void optimize()
                else if(((Instruction *)instr_array.data)[sptr].opc==WHILE_END) balance--;
             }
             dyn_array_add(Instruction,&instr_array,256,instr[i]);
-            (&dyn_array_element(Instruction,&instr_array,sptr))->arg = instr_array.used-1;
-            (&dyn_array_element(Instruction,&instr_array,instr_array.used-1))->arg = sptr;
+            (&dyn_array_element(Instruction,&instr_array,sptr))->arg0 = instr_array.used-1;
+            (&dyn_array_element(Instruction,&instr_array,instr_array.used-1))->arg0 = sptr;
             i++;
          }
          break;
-      case PTR:
-         {
-            int arg = 0;
-            while(instr[i].opc==PTR) { arg+=instr[i].arg; i++; }
-            Instruction in = {.opc = PTR, .arg = arg};
-            dyn_array_add(Instruction,&instr_array,256,in);
-         }
-         break;
-      case VAL:
-         {
-            int arg = 0;
-            while(instr[i].opc==VAL) { arg+=instr[i].arg; i++; }
-            Instruction in = {.opc = VAL, .arg = arg};
-            dyn_array_add(Instruction,&instr_array,256,in);
-         }
-         break;
+      default: dyn_array_add(Instruction,&instr_array,256,instr[i]); i++; break;
       }
    }
-
    dyn_array_free(Instruction,&old);
-   printf("Optimization overview:\n\tInput length: %d\n\tOutput length: %d\n",old.used,instr_array.used);
    instr = (Instruction *)instr_array.data;
+   //-------------------------------------
+
+   printf("Optimization overview:\n\tInput length: %d\n\tOutput length: %d\n",input_len,instr_array.used);
 }
 //-------------------------------------
