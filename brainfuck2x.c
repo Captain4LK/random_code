@@ -12,6 +12,7 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 //-------------------------------------
 
 //Internal includes
@@ -34,7 +35,7 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
    (((type *)((dyn_array *)(array)->data))[index])
 
 #define PRINT_INDENT(a) \
- for(int print_indent_o = 0;print_indent_o<(a);print_indent_o++) fprintf(out,"   ");
+ for(int print_indent_o = 0;print_indent_o<(a);print_indent_o++) fprintf(f,"   ");
 //-------------------------------------
 
 //Typedefs
@@ -68,6 +69,8 @@ static Instruction *instr = NULL;
 //Function prototypes
 static void preprocess(FILE *in);
 static void optimize();
+static void out_c(FILE *f);
+static void out_asm(FILE *f);
 //-------------------------------------
 
 //Function implementations
@@ -77,18 +80,29 @@ int main(int argc, char *argv[])
    //Parse cmd arguments
    const char *path = NULL;
    const char *path_out = NULL;
+   const char *mode_outs = NULL;
+   int mode_out = 0; //c by default
    for(int i = 1;i<argc;i++)
    {
       if(argv[i][0]=='-')
       {
          switch(argv[i][1])
          {
-         case 'h': puts("brainfuck to c compiler\nAvailible commandline options:\n\t-h\t\tprint this text\n\t-i [PATH]\tspecify the file to compile\n\t-o [PATH]\tspecify the output path"); break;
+         case 'h': puts("brainfuck to c compiler\nAvailible commandline options:\n\t-h\t\tprint this text\n\t-i [PATH]\tspecify the file to compile\n\t-o [PATH]\tspecify the output path\n\t-m [MODE]\toutput mode, 'c' or 'asm'"); break;
          case 'i': path = argv[++i]; break;
          case 'o': path_out = argv[++i]; break;
+         case 'm': mode_outs = argv[++i]; break;
          }
       }
    }
+
+   //Set output mode
+   if(mode_outs==NULL)
+      mode_out = 0;
+   else if(strcmp(mode_outs,"c")==0)
+      mode_out = 0;
+   else if(strcmp(mode_outs,"asm")==0)
+      mode_out = 1;
 
    //Parse input file
    //Removes all invalid characters
@@ -102,28 +116,18 @@ int main(int argc, char *argv[])
    fclose(in);
    optimize();
 
-   //'Compile' code
+   //Output code in prefered language
    FILE *out = stdout;
    if(path_out!=NULL)
       out = fopen(path_out,"w");
-   fprintf(out,"#include <stdio.h>\n#include <stdint.h>\n\nuint8_t mem[%d];\nuint8_t *ptr = mem;\n\nint main(int argc, char **argv)\n{\n   FILE *in = stdin;\n   if(argc>1)\n      in = fopen(argv[1],\"r\");\n\n",MEM_SIZE);
-   int indent = 1;
-   for(int i = 0;i<instr_array.used;i++)
+   switch(mode_out)
    {
-      switch(instr[i].opc)
-      {
-      case PTR: PRINT_INDENT(indent); fprintf(out,"ptr+=%d;\n",instr[i].arg0); break;
-      case VAL: PRINT_INDENT(indent); fprintf(out,"*(ptr+%d)+=%d;\n",instr[i].offset,instr[i].arg0); break;
-      case GET_VAL: PRINT_INDENT(indent); fprintf(out,"*(ptr+%d) = fgetc(in);\n",instr[i].offset); break;
-      case PUT_VAL: PRINT_INDENT(indent); fprintf(out,"putchar(*(ptr+%d));\n",instr[i].offset); break;
-      case WHILE_START: PRINT_INDENT(indent); fprintf(out,"while(*ptr)\n"); PRINT_INDENT(indent); fprintf(out,"{\n"); indent++; break;
-      case WHILE_END: indent--; PRINT_INDENT(indent); fprintf(out,"}\n"); break;
-      case CLEAR: PRINT_INDENT(indent); fprintf(out,"*(ptr+%d) = 0;\n",instr[i].offset); break;
-      }
+   case 0: out_c(out);   break; //c
+   case 1: out_asm(out); break; //x86_64 asm
    }
-   fprintf(out,"\n   if(argc>1)\n      fclose(in);\n   return 0;\n}");
    if(path_out!=NULL)
       fclose(out);
+
    dyn_array_free(Instruction,&instr_array);
 
    return 0;
@@ -281,5 +285,30 @@ static void optimize()
    //-------------------------------------
 
    printf("Optimization overview:\n\tInput length: %d\n\tOutput length: %d\n",input_len,instr_array.used);
+}
+
+static void out_c(FILE *f)
+{
+   fprintf(f,"#include <stdio.h>\n#include <stdint.h>\n\nuint8_t mem[%d];\nuint8_t *ptr = mem;\n\nint main(int argc, char **argv)\n{\n   FILE *in = stdin;\n   if(argc>1)\n      in = fopen(argv[1],\"r\");\n\n",MEM_SIZE);
+   int indent = 1;
+   for(int i = 0;i<instr_array.used;i++)
+   {
+      switch(instr[i].opc)
+      {
+      case PTR: PRINT_INDENT(indent); fprintf(f,"ptr+=%d;\n",instr[i].arg0); break;
+      case VAL: PRINT_INDENT(indent); fprintf(f,"*(ptr+%d)+=%d;\n",instr[i].offset,instr[i].arg0); break;
+      case GET_VAL: PRINT_INDENT(indent); fprintf(f,"*(ptr+%d) = fgetc(in);\n",instr[i].offset); break;
+      case PUT_VAL: PRINT_INDENT(indent); fprintf(f,"putchar(*(ptr+%d));\n",instr[i].offset); break;
+      case WHILE_START: PRINT_INDENT(indent); fprintf(f,"while(*ptr)\n"); PRINT_INDENT(indent); fprintf(f,"{\n"); indent++; break;
+      case WHILE_END: indent--; PRINT_INDENT(indent); fprintf(f,"}\n"); break;
+      case CLEAR: PRINT_INDENT(indent); fprintf(f,"*(ptr+%d) = 0;\n",instr[i].offset); break;
+      }
+   }
+   fprintf(f,"\n   if(argc>1)\n      fclose(in);\n   return 0;\n}");
+}
+
+static void out_asm(FILE *f)
+{
+   fprintf(f,"global _start\nsection .text\n\n_start:\nmov r8, stack\n");
 }
 //-------------------------------------
