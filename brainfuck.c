@@ -37,7 +37,7 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 //Typedefs
 typedef enum 
 {
-   PTR = 1, VAL = 2, GET_VAL = 3, PUT_VAL = 4, WHILE_START = 5, WHILE_END = 6, CLEAR = 7,
+   PTR = 1, VAL = 2, GET_VAL = 3, PUT_VAL = 4, WHILE_START = 5, WHILE_END = 6, CLEAR = 7, EXIT = 8,
 }Opcode;
 
 typedef struct
@@ -108,7 +108,8 @@ int main(int argc, char *argv[])
    if(io_path!=NULL)
       input = fopen(io_path,"r");
 
-   while(instr_ptr<instr_array.used)
+   int running = 1;
+   while(running)
    {
       switch(instr[instr_ptr].opc)
       {
@@ -119,6 +120,7 @@ int main(int argc, char *argv[])
       case WHILE_START: if(!(*ptr)) instr_ptr = instr[instr_ptr].arg0; instr_ptr++; break;
       case WHILE_END: instr_ptr = instr[instr_ptr].arg0; break;
       case CLEAR: *(ptr+instr[instr_ptr].offset) = 0; instr_ptr++; break;
+      case EXIT: running = 0; break;
       }
    }
    dyn_array_free(Instruction,&instr_array);
@@ -278,5 +280,6 @@ static void optimize()
    //-------------------------------------
 
    printf("Optimization overview:\n\tInput length: %d\n\tOutput length: %d\n",input_len,instr_array.used);
+   dyn_array_add(Instruction,&instr_array,256,(Instruction){.opc = EXIT});
 }
 //-------------------------------------
