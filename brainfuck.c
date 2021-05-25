@@ -32,6 +32,8 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 
 #define dyn_array_element(type, array, index) \
    (((type *)((dyn_array *)(array)->data))[index])
+
+#define EXPAND 256
 //-------------------------------------
 
 //Typedefs
@@ -130,7 +132,7 @@ int main(int argc, char *argv[])
 
 static void preprocess(FILE *in)
 {
-   dyn_array_init(Instruction,&instr_array,256);
+   dyn_array_init(Instruction,&instr_array,EXPAND);
    while(!feof(in))
    {
       char c = fgetc(in);
@@ -148,7 +150,7 @@ static void preprocess(FILE *in)
       }
 
       if(next.opc)
-         dyn_array_add(Instruction,&instr_array,256,next);
+         dyn_array_add(Instruction,&instr_array,EXPAND,next);
    }
    instr = (Instruction *)instr_array.data;
 }
@@ -162,8 +164,7 @@ static void optimize()
    //get rle encoded
    //i.e.: +++++++ gets converted to *ptr+=7
    dyn_array old = instr_array;
-   dyn_array_init(Instruction,&instr_array,256);
-
+   dyn_array_init(Instruction,&instr_array,EXPAND);
    int i = 0;
    int end = old.used;
    while(i<end)
@@ -175,7 +176,7 @@ static void optimize()
             int arg = 0;
             while(instr[i].opc==PTR) { arg+=instr[i].arg0; i++; }
             Instruction in = {.opc = PTR, .arg0 = arg, .offset = 0};
-            dyn_array_add(Instruction,&instr_array,256,in);
+            dyn_array_add(Instruction,&instr_array,EXPAND,in);
          }
          break;
       case VAL:
@@ -183,10 +184,10 @@ static void optimize()
             int arg = 0;
             while(instr[i].opc==VAL) { arg+=instr[i].arg0; i++; }
             Instruction in = {.opc = VAL, .arg0 = arg, .offset = 0};
-            dyn_array_add(Instruction,&instr_array,256,in);
+            dyn_array_add(Instruction,&instr_array,EXPAND,in);
          }
          break;
-      default: dyn_array_add(Instruction,&instr_array,256,instr[i]); i++; break;
+      default: dyn_array_add(Instruction,&instr_array,EXPAND,instr[i]); i++; break;
       }
    }
    dyn_array_free(Instruction,&old);
@@ -194,8 +195,12 @@ static void optimize()
    //-------------------------------------
 
    //Pass 2 --> common patterns
+   //Some snippets of code are reused often
+   //Some of these get taken care of here
+   //Currently implemented:
+   //[-] Clears the cell to zero
    old = instr_array;
-   dyn_array_init(Instruction,&instr_array,256);
+   dyn_array_init(Instruction,&instr_array,EXPAND);
    i = 0;
    end = old.used;
    while(i<end)
@@ -204,12 +209,12 @@ static void optimize()
       if(i<old.used-2&&instr[i].opc==WHILE_START&&instr[i+1].opc==VAL&&instr[i+2].opc==WHILE_END)
       {
          Instruction ni = {.opc = CLEAR, .arg0 = 0, .offset = 0};
-         dyn_array_add(Instruction,&instr_array,256,ni);
+         dyn_array_add(Instruction,&instr_array,EXPAND,ni);
          i+=3;
       }
       else
       {
-         dyn_array_add(Instruction,&instr_array,256,instr[i]); i++;
+         dyn_array_add(Instruction,&instr_array,EXPAND,instr[i]); i++;
       }
    }
    dyn_array_free(Instruction,&old);
@@ -217,13 +222,18 @@ static void optimize()
    //-------------------------------------
 
    //Pass 3 --> offsets
+   //Sometimes the pointer gets moved to
+   //a specific location and back for a single command,
+   //this makes such occurrences execute
+   //as a single execution
+   //Currently implemented: '+';',';'.';'>';'[-]'
    old = instr_array;
-   dyn_array_init(Instruction,&instr_array,256);
+   dyn_array_init(Instruction,&instr_array,EXPAND);
    i = 0;
    end = old.used;
    while(i<end)
    {
-      //Offset add
+      //Offset add, val, clear, put, get
       if(i<old.used-2&&
          instr[i].opc==PTR&&instr[i+2].opc==PTR&&
          instr[i].arg0==-instr[i+2].arg0)
@@ -231,16 +241,16 @@ static void optimize()
          Instruction ni;
          switch(instr[i+1].opc)
          {
-         case VAL: ni = (Instruction){.opc = VAL, .arg0 = instr[i+1].arg0, .offset = instr[i].arg0}; dyn_array_add(Instruction,&instr_array,256,ni); i+=3; break;
-         case CLEAR: ni = (Instruction){.opc = CLEAR, .offset = instr[i].arg0}; dyn_array_add(Instruction,&instr_array,256,ni); i+=3; break;
-         case PUT_VAL: ni = (Instruction){.opc = PUT_VAL, .offset = instr[i].arg0}; dyn_array_add(Instruction,&instr_array,256,ni); i+=3; break;
-         case GET_VAL: ni = (Instruction){.opc = GET_VAL, .offset = instr[i].arg0}; dyn_array_add(Instruction,&instr_array,256,ni); i+=3; break;
-         default: dyn_array_add(Instruction,&instr_array,256,instr[i]); i++; break;
+         case VAL: ni = (Instruction){.opc = VAL, .arg0 = instr[i+1].arg0, .offset = instr[i].arg0}; dyn_array_add(Instruction,&instr_array,EXPAND,ni); i+=3; break;
+         case CLEAR: ni = (Instruction){.opc = CLEAR, .offset = instr[i].arg0}; dyn_array_add(Instruction,&instr_array,EXPAND,ni); i+=3; break;
+         case PUT_VAL: ni = (Instruction){.opc = PUT_VAL, .offset = instr[i].arg0}; dyn_array_add(Instruction,&instr_array,EXPAND,ni); i+=3; break;
+         case GET_VAL: ni = (Instruction){.opc = GET_VAL, .offset = instr[i].arg0}; dyn_array_add(Instruction,&instr_array,EXPAND,ni); i+=3; break;
+         default: dyn_array_add(Instruction,&instr_array,EXPAND,instr[i]); i++; break;
          }
       }
       else
       {
-         dyn_array_add(Instruction,&instr_array,256,instr[i]); i++;
+         dyn_array_add(Instruction,&instr_array,EXPAND,instr[i]); i++;
       }
    }
    dyn_array_free(Instruction,&old);
@@ -248,8 +258,13 @@ static void optimize()
    //-------------------------------------
 
    //Pass 4 --> while
+   //Find matching brackets
+   //and store their positions
+   //Needs to be done last
+   //since memory layout of instructions
+   //changes in previous passes
    old = instr_array;
-   dyn_array_init(Instruction,&instr_array,256);
+   dyn_array_init(Instruction,&instr_array,EXPAND);
    i = 0;
    end = old.used;
    while(i<end)
@@ -266,13 +281,13 @@ static void optimize()
                if(((Instruction *)instr_array.data)[sptr].opc==WHILE_START) balance++;
                else if(((Instruction *)instr_array.data)[sptr].opc==WHILE_END) balance--;
             }
-            dyn_array_add(Instruction,&instr_array,256,instr[i]);
+            dyn_array_add(Instruction,&instr_array,EXPAND,instr[i]);
             (&dyn_array_element(Instruction,&instr_array,sptr))->arg0 = instr_array.used-1;
             (&dyn_array_element(Instruction,&instr_array,instr_array.used-1))->arg0 = sptr;
             i++;
          }
          break;
-      default: dyn_array_add(Instruction,&instr_array,256,instr[i]); i++; break;
+      default: dyn_array_add(Instruction,&instr_array,EXPAND,instr[i]); i++; break;
       }
    }
    dyn_array_free(Instruction,&old);
@@ -280,6 +295,6 @@ static void optimize()
    //-------------------------------------
 
    printf("Optimization overview:\n\tInput length: %d\n\tOutput length: %d\n",input_len,instr_array.used);
-   dyn_array_add(Instruction,&instr_array,256,(Instruction){.opc = EXIT});
+   dyn_array_add(Instruction,&instr_array,EXPAND,(Instruction){.opc = EXIT});
 }
 //-------------------------------------
