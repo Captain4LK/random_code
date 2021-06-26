@@ -152,6 +152,7 @@ static void preprocess(FILE *in)
       if(next.opc)
          dyn_array_add(Instruction,&instr_array,EXPAND,next);
    }
+   dyn_array_add(Instruction,&instr_array,EXPAND,(Instruction){.opc = EXIT});
    instr = (Instruction *)instr_array.data;
 }
 
@@ -295,6 +296,5 @@ static void optimize()
    //-------------------------------------
 
    printf("Optimization overview:\n\tInput length: %d\n\tOutput length: %d\n",input_len,instr_array.used);
-   dyn_array_add(Instruction,&instr_array,EXPAND,(Instruction){.opc = EXIT});
 }
 //-------------------------------------
