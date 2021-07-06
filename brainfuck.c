@@ -12,6 +12,7 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 //-------------------------------------
 
 //Internal includes
@@ -34,6 +35,9 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
    (((type *)((dyn_array *)(array)->data))[index])
 
 #define EXPAND 256
+
+#define READ_ARG(I) \
+   ((++(I))<argc?argv[(I)]:NULL)
 //-------------------------------------
 
 //Typedefs
@@ -71,6 +75,7 @@ static Instruction *instr = NULL;
 //Function prototypes
 static void preprocess(FILE *in);
 static void optimize();
+static void print_help(int argc, char **argv);
 //-------------------------------------
 
 //Function implementations
@@ -79,18 +84,19 @@ int main(int argc, char *argv[])
 {
    //Parse cmd arguments
    const char *path = NULL;
-   const char *io_path = NULL;
+   const char *path_io = NULL;
+
    for(int i = 1;i<argc;i++)
    {
-      if(argv[i][0]=='-')
-      {
-         switch(argv[i][1])
-         {
-         case 'h': puts("brainfuck interpreter\nAvailible commandline options:\n\t-h\t\tprint this text\n\t-f [PATH]\tspecify the file to execute\n\t-i [PATH]\tspecify the file to use as input"); break;
-         case 'f': path = argv[++i]; break;
-         case 'i':  io_path = argv[++i]; break;
-         }
-      }
+      if(strcmp(argv[i],"--help")==0||
+         strcmp(argv[i],"-help")==0||
+         strcmp(argv[i],"-h")==0||
+         strcmp(argv[i],"?")==0)
+         print_help(argc,argv);
+      else if(strcmp(argv[i],"-f")==0)
+         path = READ_ARG(i);
+      else if(strcmp(argv[i],"-i")==0)
+         path_io = READ_ARG(i);
    }
 
    //Parse input file
@@ -107,8 +113,8 @@ int main(int argc, char *argv[])
 
    //Run code
    FILE *input = stdin;
-   if(io_path!=NULL)
-      input = fopen(io_path,"r");
+   if(path_io!=NULL)
+      input = fopen(path_io,"r");
 
    int running = 1;
    while(running)
@@ -296,5 +302,14 @@ static void optimize()
    //-------------------------------------
 
    printf("Optimization overview:\n\tInput length: %d\n\tOutput length: %d\n",input_len,instr_array.used);
+}
+
+static void print_help(int argc, char **argv)
+{
+   printf("%s usage:\n"
+          "%s -f filename [-i filename]\n"
+          "   -f\tfile to execute\n"
+          "   -i\tfile to read input from\n",
+         argv[0],argv[0]);
 }
 //-------------------------------------
