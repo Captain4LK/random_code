@@ -19,6 +19,8 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 //-------------------------------------
 
 //#defines
+
+//Memory size
 #define MEM_SIZE (1<<24)
 
 //Universal dynamic array
@@ -56,8 +58,8 @@ typedef struct
 
 typedef struct
 {
-   uint32_t used;
-   uint32_t size;
+   unsigned used;
+   unsigned size;
    void *data;
 }dyn_array;
 //-------------------------------------
@@ -75,7 +77,7 @@ static Instruction *instr = NULL;
 //Function prototypes
 static void preprocess(FILE *in);
 static void optimize();
-static void print_help(int argc, char **argv);
+static void print_help(char **argv);
 //-------------------------------------
 
 //Function implementations
@@ -92,7 +94,7 @@ int main(int argc, char *argv[])
          strcmp(argv[i],"-help")==0||
          strcmp(argv[i],"-h")==0||
          strcmp(argv[i],"?")==0)
-         print_help(argc,argv);
+         print_help(argv);
       else if(strcmp(argv[i],"-f")==0)
          path = READ_ARG(i);
       else if(strcmp(argv[i],"-i")==0)
@@ -172,8 +174,8 @@ static void optimize()
    //i.e.: +++++++ gets converted to *ptr+=7
    dyn_array old = instr_array;
    dyn_array_init(Instruction,&instr_array,EXPAND);
-   int i = 0;
-   int end = old.used;
+   unsigned i = 0;
+   unsigned end = old.used;
    while(i<end)
    {
       switch(instr[i].opc)
@@ -304,7 +306,7 @@ static void optimize()
    printf("Optimization overview:\n\tInput length: %d\n\tOutput length: %d\n",input_len,instr_array.used);
 }
 
-static void print_help(int argc, char **argv)
+static void print_help(char **argv)
 {
    printf("%s usage:\n"
           "%s -f filename [-i filename]\n"
