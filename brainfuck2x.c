@@ -77,7 +77,7 @@ static Instruction *instr = NULL;
 static void preprocess(FILE *in);
 static void optimize();
 static void out_c(FILE *f);
-static void out_asm(FILE *f);
+static void out_fortran(FILE *f);
 static void print_help(char **argv);
 //-------------------------------------
 
@@ -106,7 +106,7 @@ int main(int argc, char *argv[])
          const char *arg_mode = READ_ARG(i);
          if(strcmp(arg_mode,"c")==0)
             mode_out = 0;
-         else if(strcmp(arg_mode,"x86_64")==0)
+         else if(strcmp(arg_mode,"fortran")==0)
             mode_out = 1;
       }
    }
@@ -131,7 +131,7 @@ int main(int argc, char *argv[])
    switch(mode_out)
    {
    case 0: out_c(out);   break; //c
-   case 1: out_asm(out); break; //x86_64 asm
+   case 1: out_fortran(out); break; //fortran
    }
 
    if(path_out!=NULL)
@@ -331,9 +331,25 @@ static void out_c(FILE *f)
    fprintf(f,"\n   if(argc>1)\n      fclose(in);\n\n   return 0;\n}");
 }
 
-static void out_asm(FILE *f)
+static void out_fortran(FILE *f)
 {
-   fprintf(f,"global _start\nsection .text\n\n_start:\nmov r8, stack\n");
+   fprintf(f,"program fortran\n   use iso_fortran_env\n   implicit none\n   character, dimension(:), allocatable::mem\n   integer(kind=4)::ptr\n   ptr = 0\n   allocate(mem(%d))\n\n",MEM_SIZE);
+   int indent = 1;
+   for(unsigned i = 0;i<instr_array.used;i++)
+   {
+      switch(instr[i].opc)
+      {
+      case PTR: PRINT_INDENT(indent); fprintf(f,"ptr = ptr+(%d)\n",instr[i].arg0); break;
+      case VAL: PRINT_INDENT(indent); fprintf(f,"mem(ptr+%d) = CHAR(ICHAR(mem(ptr+(%d)))+(%d))\n",instr[i].offset,instr[i].offset,instr[i].arg0); break;
+      case GET_VAL: PRINT_INDENT(indent); fprintf(f,"call fget(mem(ptr+(%d)))\n",instr[i].offset); break;
+      case PUT_VAL: PRINT_INDENT(indent); fprintf(f,"call fput(mem(ptr+(%d)))\n",instr[i].offset); break;
+      case WHILE_START: PRINT_INDENT(indent); fprintf(f,"do while(ICHAR(mem(ptr))/=0)\n"); indent++; break;
+      case WHILE_END: indent--; PRINT_INDENT(indent); fprintf(f,"end do\n"); break;
+      case CLEAR: PRINT_INDENT(indent); fprintf(f,"mem(ptr+(%d)) = CHAR(0)\n",instr[i].offset); break;
+      case EXIT: break;
+      }
+   }
+   fprintf(f,"\n   deallocate(mem)\nend program fortran");
 }
 
 static void print_help(char **argv)
@@ -342,7 +358,7 @@ static void print_help(char **argv)
           "%s -i filename -o filename [-m mode]\n"
           "   -i\tfile to compile\n"
           "   -o\toutput path\n"
-          "   -m\toutput format (c;asm)\n",
+          "   -m\toutput format (c;fortran)\n",
          argv[0],argv[0]);
 }
 //-------------------------------------
