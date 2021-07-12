@@ -6,9 +6,12 @@ Collection of random, small code (snippets) I wrote over time. All code in this 
 
 A brainfuck interpreter
 
-## brainfuck2c.c
+## brainfuck2x.c
 
-A brainfuck to c compiler
+Converts brainfuck scripts to different languages, currently supported: 
+
+* C
+* fortran
 
 ## gmod_convert.c
 
@@ -18,11 +21,6 @@ On October 22, 2000, Golgotha was released to the Public Domain. The 3d models i
 
 Hide data in png files
 
-## file formats
+## quantize.c
 
-Collection of single header libs for various file formats
-
-|Library|Description|
-|---|---|
-|[pal](file_formats/pal.h)|Corax palette format|
-|[json](file_formats/json.h)|Json parser and writer|
+Image quantization (reduces the color of an image). Doesn't do any dithering, look at SLK_img2pixel if you want that.
