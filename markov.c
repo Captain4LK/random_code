@@ -63,7 +63,7 @@ typedef struct
 //-------------------------------------
 
 //Variables
-dyn_array sentences = {0};
+//dyn_array sentences = {0};
 dyn_array words = {0};
 dyn_array markov_chain = {0};
 dyn_array markov_chain_start = {0};
@@ -71,15 +71,19 @@ dyn_array markov_chain_start = {0};
 
 //Function prototypes
 static void print_help(char **argv);
-static void split_sentences(char *input);
-static void split_sentences_lines(char *input);
 static void dump_model(const char *path);
-static void generate_chain(int state_size);
+static void generate_chain(int state_size, dyn_array sentences);
 static void load_model(int state_size, const char *path);
 static int add_word(const char *word);
 static void add_entry(dyn_array prefix,int32_t suffix, int start);
 static void generate_sentence(char *input, int state_size);
 static int find_prefix(dyn_array prefix);
+
+static char *file_read(const char *path);
+static dyn_array string_split_sentence(char *input);
+static dyn_array string_split_line(char *input);
+static void string_split_free(dyn_array *sp);
+static int is_abbreviation(const char *word);
 //-------------------------------------
 
 //Function implementations
@@ -125,23 +129,16 @@ int main(int argc, char **argv)
 
    if(path_model==NULL)
    {
-      FILE *f = fopen(path,"rb");
-      int32_t size = 0;
-      fseek(f,0,SEEK_END);
-      size = ftell(f);
-      fseek(f,0,SEEK_SET);
-      char *input = malloc(size+1);
-      fread(input,size,1,f);
-      input[size] = 0;
-      fclose(f);
+      char *input = file_read(path);
+      dyn_array sentences;
 
       if(sentence_mode==0)
-         split_sentences(input);
+         sentences = string_split_sentence(input);
       else if(sentence_mode==1)
-         split_sentences_lines(input);
+         sentences = string_split_line(input);
       free(input);
 
-      generate_chain(state_size);
+      generate_chain(state_size,sentences);
 
       dump_model("out.bin");
 
@@ -170,15 +167,7 @@ int main(int argc, char **argv)
       load_model(state_size,path_model);
    }
 
-   FILE *f = fopen(path,"rb");
-   int32_t size = 0;
-   fseek(f,0,SEEK_END);
-   size = ftell(f);
-   fseek(f,0,SEEK_SET);
-   char *input = malloc(size+1);
-   fread(input,size,1,f);
-   input[size] = 0;
-   fclose(f);
+   char *input = file_read(path);
 
    for(int i = 0;i<sentence_count;i++)
       generate_sentence(input,state_size);
@@ -196,88 +185,6 @@ static void print_help(char **argv)
           "   -o\tfile to write output to (stdout if not provided)\n"
           "   -sz\tstate size, number of words to consider, 2 by default\n",
          argv[0],argv[0]);
-}
-
-static void split_sentences(char *input)
-{
-   const char *token = " \n";
-   const char *punctuation = ".!?";
-   int current = 0;
-
-   //Should probably use a linked list, but who cares...
-   dyn_array_init(dyn_array,&sentences,SIZE);
-   dyn_array sentence;
-   dyn_array_init(char *,&sentence,SIZE);
-   dyn_array_add(dyn_array,&sentences,EXPAND,sentence);
-
-   char *word = strtok(input,token);
-   while(word!=NULL)
-   {
-      char *nword = malloc(strlen(word)+1);
-      strcpy(nword,word);
-      dyn_array_add(char *,&dyn_array_element(dyn_array,&sentences,current),EXPAND,nword);
-
-      if(strchr(punctuation,word[strlen(word)-1])!=NULL)
-      {
-         //TODO: check if abbreviation
-         current++;
-         sentence.used = 0;
-         sentence.size = 0;
-         sentence.data = NULL;
-         dyn_array_init(char *,&sentence,SIZE);
-         dyn_array_add(dyn_array,&sentences,EXPAND,sentence);
-      }
-
-      word = strtok(NULL,token);
-   }
-}
-
-static void split_sentences_lines(char *input)
-{
-   dyn_array input_processed;
-   dyn_array_init(char,&input_processed,SIZE);
-   while(*input)
-   {
-      dyn_array_add(char,&input_processed,EXPAND,*input);
-      if((*input)=='\n')
-         dyn_array_add(char,&input_processed,EXPAND,' ');
-      input++;
-   }
-   dyn_array_add(char,&input_processed,EXPAND,'\0');
-
-   const char *token = " ";
-   int current = 0;
-   input = (char *)input_processed.data;
-
-   //Should probably use a linked list, but who cares...
-   dyn_array_init(dyn_array,&sentences,SIZE);
-   dyn_array sentence;
-   dyn_array_init(char *,&sentence,SIZE);
-   dyn_array_add(dyn_array,&sentences,EXPAND,sentence);
-
-   char *word = strtok(input,token);
-   while(word!=NULL)
-   {
-      char *nword = malloc(strlen(word)+1);
-      strcpy(nword,word);
-      if(nword[strlen(nword)-1]=='\n')
-         nword[strlen(nword)-1] = '\0';
-      dyn_array_add(char *,&dyn_array_element(dyn_array,&sentences,current),EXPAND,nword);
-
-      if(word[strlen(word)-1]=='\n')
-      {
-         current++;
-         sentence.used = 0;
-         sentence.size = 0;
-         sentence.data = NULL;
-         dyn_array_init(char *,&sentence,SIZE);
-         dyn_array_add(dyn_array,&sentences,EXPAND,sentence);
-      }
-
-      word = strtok(NULL,token);
-   }
-
-   dyn_array_free(char,&input_processed);
 }
 
 static void dump_model(const char *path)
@@ -319,7 +226,7 @@ static void dump_model(const char *path)
    fclose(f);
 }
 
-static void generate_chain(int state_size)
+static void generate_chain(int state_size, dyn_array sentences)
 {
    dyn_array_init(Markov_entry,&markov_chain,SIZE);
    dyn_array_init(int32_t,&markov_chain_start,SIZE);
@@ -478,6 +385,8 @@ static void generate_sentence(char *input, int state_size)
             last[i] = last[i+1];
          last[state_size-1] = prefix;
       }
+      //Remove last charecter --> will always be whitespace, but is not desired for strstr
+      sentence.used--;
       dyn_array_add(char,&sentence,EXPAND,'\n');
       //Add two to make sure there is enough space in string 
       //to correctly replace when checking
@@ -495,15 +404,15 @@ static void generate_sentence(char *input, int state_size)
       do
       {
          text_end = strpbrk(text_end,breakset);
-         if(text_end!=NULL&&*text_end!='\n')
+         if(text_end!=NULL)//&&*text_end!='\n')
          {
-            replaced = *(text_end+1);
-            *(text_end+1) = '\0';
+            replaced = *(text_end);
+            *(text_end) = '\0';
 
             if(strstr(input,text_start)!=NULL)
                found = 1;
 
-            *(text_end+1) = replaced;
+            *(text_end) = replaced;
 
          }
          if(text_end!=NULL)
@@ -609,5 +518,148 @@ static void load_model(int state_size, const char *path)
    }
 
    fclose(f);
+}
+
+static char *file_read(const char *path)
+{
+   FILE *f = fopen(path,"rb");
+   int32_t size = 0;
+   fseek(f,0,SEEK_END);
+   size = ftell(f);
+   fseek(f,0,SEEK_SET);
+   char *text = malloc(size+1);
+   fread(text,size,1,f);
+   text[size] = 0;
+   fclose(f);
+
+   return text;
+}
+
+static dyn_array string_split_sentence(char *input)
+{
+   dyn_array sp;
+   const char *token = " \n";
+   const char *punctuation = ".!?";
+   int current = 0;
+
+   dyn_array_init(dyn_array,&sp,SIZE);
+   dyn_array sentence;
+   dyn_array_init(char *,&sentence,SIZE);
+   dyn_array_add(dyn_array,&sp,EXPAND,sentence);
+
+   char *word = strtok(input,token);
+   while(word!=NULL)
+   {
+      char *nword = malloc(strlen(word)+1);
+      strcpy(nword,word);
+      dyn_array_add(char *,&dyn_array_element(dyn_array,&sp,current),EXPAND,nword);
+
+      if(strchr(punctuation,word[strlen(word)-1])!=NULL&&!is_abbreviation(word))
+      {
+         current++;
+         sentence.used = 0;
+         sentence.size = 0;
+         sentence.data = NULL;
+         dyn_array_init(char *,&sentence,SIZE);
+         dyn_array_add(dyn_array,&sp,EXPAND,sentence);
+      }
+
+      word = strtok(NULL,token);
+   }
+
+   return sp;
+}
+
+static dyn_array string_split_line(char *input)
+{
+   dyn_array sp;
+
+   //Process input, add a whitespace character after
+   //efery newline to make splitting easier.
+   dyn_array input_processed;
+   dyn_array_init(char,&input_processed,SIZE);
+   while(*input)
+   {
+      dyn_array_add(char,&input_processed,EXPAND,*input);
+      if((*input)=='\n')
+         dyn_array_add(char,&input_processed,EXPAND,' ');
+      input++;
+   }
+   dyn_array_add(char,&input_processed,EXPAND,'\0');
+
+   const char *token = " ";
+   int current = 0;
+   input = (char *)input_processed.data;
+
+   //Should probably use a linked list, but who cares...
+   dyn_array_init(dyn_array,&sp,SIZE);
+   dyn_array sentence;
+   dyn_array_init(char *,&sentence,SIZE);
+   dyn_array_add(dyn_array,&sp,EXPAND,sentence);
+
+   char *word = strtok(input,token);
+   while(word!=NULL)
+   {
+      char *nword = malloc(strlen(word)+1);
+      strcpy(nword,word);
+      if(nword[strlen(nword)-1]=='\n')
+         nword[strlen(nword)-1] = '\0';
+      dyn_array_add(char *,&dyn_array_element(dyn_array,&sp,current),EXPAND,nword);
+
+      if(word[strlen(word)-1]=='\n')
+      {
+         current++;
+         sentence.used = 0;
+         sentence.size = 0;
+         sentence.data = NULL;
+         dyn_array_init(char *,&sentence,SIZE);
+         dyn_array_add(dyn_array,&sp,EXPAND,sentence);
+      }
+
+      word = strtok(NULL,token);
+   }
+
+   dyn_array_free(char,&input_processed);
+
+   return sp;
+}
+
+static void string_split_free(dyn_array *sp)
+{
+   for(int i = 0;i<sp->used;i++)
+   {
+      dyn_array *s = &dyn_array_element(dyn_array,sp,i);
+
+      for(int j = 0;j<s->used;j++)
+         free(dyn_array_element(char *,s,j));
+
+      dyn_array_free(char *,s);
+   }
+   
+   dyn_array_free(dyn_array,sp);
+}
+
+static int is_abbreviation(const char *word)
+{
+   if(strcmp(word,"Mr.")==0)
+      return 1;
+   if(strcmp(word,"Ms.")==0)
+      return 1;
+   if(strcmp(word,"Mrs.")==0)
+      return 1;
+   if(strcmp(word,"Dr.")==0)
+      return 1;
+   if(strcmp(word,"Inc.")==0)
+      return 1;
+   if(strcmp(word,"Ltd.")==0)
+      return 1;
+   if(strcmp(word,"Jr.")==0)
+      return 1;
+   if(strcmp(word,"Sr.")==0)
+      return 1;
+   if(strcmp(word,"Co.")==0)
+      return 1;
+
+   return 0;
 }
 //-------------------------------------
