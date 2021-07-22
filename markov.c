@@ -39,6 +39,8 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 
 #define READ_ARG(I) \
    ((++(I))<argc?argv[(I)]:NULL)
+
+#define FNV_64_PRIME ((uint64_t)0x100000001b3ULL)
 //-------------------------------------
 
 //Typedefs
@@ -60,10 +62,15 @@ typedef struct
    int32_t entry;
    int32_t weight;
 }Suffix;
+
+typedef struct
+{
+   uint64_t hash;
+   char *word;
+}Word;
 //-------------------------------------
 
 //Variables
-//dyn_array sentences = {0};
 dyn_array words = {0};
 dyn_array markov_chain = {0};
 dyn_array markov_chain_start = {0};
@@ -84,6 +91,8 @@ static dyn_array string_split_sentence(char *input);
 static dyn_array string_split_line(char *input);
 static void string_split_free(dyn_array *sp);
 static int is_abbreviation(const char *word);
+static char *HLH_strtok(char *s, const char *sep, char *t);
+static uint64_t fnv64a(const char *str);
 //-------------------------------------
 
 //Function implementations
@@ -139,6 +148,7 @@ int main(int argc, char **argv)
       free(input);
 
       generate_chain(state_size,sentences);
+      string_split_free(&sentences);
 
       dump_model("out.bin");
 
@@ -195,7 +205,7 @@ static void dump_model(const char *path)
    fwrite(&words.used,sizeof(int32_t),1,f);
    for(int i = 0;i<words.used;i++)
    {
-      char *word = dyn_array_element(char *,&words,i);
+      char *word = dyn_array_element(Word,&words,i).word;
       int32_t len = strlen(word);
       fwrite(&len,sizeof(int32_t),1,f);
       fwrite(word,len,1,f);
@@ -270,20 +280,22 @@ static void generate_chain(int state_size, dyn_array sentences)
 
 static int add_word(const char *word)
 {
+   uint64_t hash = fnv64a(word);
+
    if(words.size==0)
-      dyn_array_init(char *,&words,SIZE);
+      dyn_array_init(Word,&words,SIZE);
 
    //Check if in array
    for(int i = 0;i<words.used;i++)
-   {
-      if(strcmp(word,dyn_array_element(char *,&words,i))==0)
+      if(dyn_array_element(Word,&words,i).hash==hash)
          return i;
-   }
 
    //Add to array
-   char *nword = malloc(strlen(word)+1);
-   strcpy(nword,word);
-   dyn_array_add(char *,&words,EXPAND,nword);
+   Word nword;
+   nword.hash = hash;
+   nword.word = malloc(strlen(word)+1);
+   strcpy(nword.word,word);
+   dyn_array_add(Word,&words,EXPAND,nword);
 
    return words.used-1;
 }
@@ -363,7 +375,7 @@ static void generate_sentence(char *input, int state_size)
          last[i] = dyn_array_element(int32_t,&e->prefix,i);
          if(last[i]!=-1)
          {
-            char *word = dyn_array_element(char *,&words,last[i]);
+            char *word = dyn_array_element(Word,&words,last[i]).word;
             for(;*word;word++)
                dyn_array_add(char,&sentence,EXPAND,*word);
             dyn_array_add(char,&sentence,EXPAND,' ');
@@ -376,7 +388,7 @@ static void generate_sentence(char *input, int state_size)
          prefix = dyn_array_element(Suffix,&e->suffix,rand()%e->suffix.used).entry;
          if(prefix!=-1)
          {
-            char *word = dyn_array_element(char *,&words,prefix);
+            char *word = dyn_array_element(Word,&words,prefix).word;
             for(;*word;word++)
                dyn_array_add(char,&sentence,EXPAND,*word);
             dyn_array_add(char,&sentence,EXPAND,' ');
@@ -463,7 +475,6 @@ static void load_model(int state_size, const char *path)
 
    int32_t word_count = 0;
    fread(&word_count,sizeof(int32_t),1,f);
-   dyn_array_init(char *,&words,word_count);
    for(int i = 0;i<word_count;i++)
    {
       int32_t len = 0;
@@ -471,9 +482,8 @@ static void load_model(int state_size, const char *path)
       char *nword = malloc(len+1);
       fread(nword,len,1,f);
       nword[len] = '\0';
-      dyn_array_add(char *,&words,EXPAND,nword);
+      add_word(nword);
    }
-
 
    int32_t entry_count = 0;
    fread(&entry_count,sizeof(int32_t),1,f);
@@ -538,12 +548,12 @@ static char *file_read(const char *path)
 static dyn_array string_split_sentence(char *input)
 {
    dyn_array sp;
+   dyn_array sentence;
    const char *token = " \n";
    const char *punctuation = ".!?";
    int current = 0;
 
    dyn_array_init(dyn_array,&sp,SIZE);
-   dyn_array sentence;
    dyn_array_init(char *,&sentence,SIZE);
    dyn_array_add(dyn_array,&sp,EXPAND,sentence);
 
@@ -573,40 +583,23 @@ static dyn_array string_split_sentence(char *input)
 static dyn_array string_split_line(char *input)
 {
    dyn_array sp;
-
-   //Process input, add a whitespace character after
-   //efery newline to make splitting easier.
-   dyn_array input_processed;
-   dyn_array_init(char,&input_processed,SIZE);
-   while(*input)
-   {
-      dyn_array_add(char,&input_processed,EXPAND,*input);
-      if((*input)=='\n')
-         dyn_array_add(char,&input_processed,EXPAND,' ');
-      input++;
-   }
-   dyn_array_add(char,&input_processed,EXPAND,'\0');
-
-   const char *token = " ";
-   int current = 0;
-   input = (char *)input_processed.data;
-
-   //Should probably use a linked list, but who cares...
-   dyn_array_init(dyn_array,&sp,SIZE);
    dyn_array sentence;
+   const char *token = " \n";
+   char t;
+   int current = 0;
+
+   dyn_array_init(dyn_array,&sp,SIZE);
    dyn_array_init(char *,&sentence,SIZE);
    dyn_array_add(dyn_array,&sp,EXPAND,sentence);
 
-   char *word = strtok(input,token);
+   char *word = HLH_strtok(input,token,&t);
    while(word!=NULL)
    {
       char *nword = malloc(strlen(word)+1);
       strcpy(nword,word);
-      if(nword[strlen(nword)-1]=='\n')
-         nword[strlen(nword)-1] = '\0';
       dyn_array_add(char *,&dyn_array_element(dyn_array,&sp,current),EXPAND,nword);
 
-      if(word[strlen(word)-1]=='\n')
+      if(t=='\n')
       {
          current++;
          sentence.used = 0;
@@ -616,10 +609,8 @@ static dyn_array string_split_line(char *input)
          dyn_array_add(dyn_array,&sp,EXPAND,sentence);
       }
 
-      word = strtok(NULL,token);
+      word = HLH_strtok(NULL,token,&t);
    }
-
-   dyn_array_free(char,&input_processed);
 
    return sp;
 }
@@ -661,5 +652,48 @@ static int is_abbreviation(const char *word)
       return 1;
 
    return 0;
+}
+
+//Essentially standard strtok, but stores the token
+//the text was separated by in a variable.
+static char *HLH_strtok(char *s, const char *sep, char *t)
+{
+   static char *src = NULL;
+   char *p;
+
+   if(s==NULL)
+      s = src;
+
+   while(*s&&strchr(sep,*s)!=NULL)
+      s++;
+
+   if(!*s)
+      return NULL;
+
+   for(p = s;*s&&!strchr(sep,*s);s++);
+
+   if(*s&&s[1])
+   {
+      if(t!=NULL)
+         *t = *s;
+      *(s++) = 0;
+   }
+
+   src = s;
+
+   return p;
+}
+
+static uint64_t fnv64a(const char *str)
+{
+   uint64_t hval = 0xcbf29ce484222325ULL;
+   unsigned char *s = (unsigned char *)str;
+   while(*s)
+   {
+      hval^=(uint64_t)*s++;
+      hval*=FNV_64_PRIME;
+   }
+
+   return hval;
 }
 //-------------------------------------
