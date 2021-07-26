@@ -1,14 +1,30 @@
+#ifndef _HLH_STRGEN_H_
+
 /*
-Markov chain string generator
+   Markov chain string generator, wchar edition
 
-Written in 2021 by Lukas Holzbeierlein (Captain4LK) email: captain4lk [at] tutanota [dot] com
+   Written in 2021 by Lukas Holzbeierlein (Captain4LK) email: captain4lk [at] tutanota [dot] com
 
-To the extent possible under law, the author(s) have dedicated all copyright and related and neighboring rights to this software to the public domain worldwide. This software is distributed without any warranty.
+   To the extent possible under law, the author(s) have dedicated all copyright and related and neighboring rights to this software to the public domain worldwide. This software is distributed without any warranty.
 
-You should have received a copy of the CC0 Public Domain Dedication along with this software. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>. 
+   You should have received a copy of the CC0 Public Domain Dedication along with this software. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>. 
 */
 
-#ifndef _HLH_STRGEN_H_
+/* 
+   To create implementation (the function definitions) add
+      #define HLH_STRGEN_IMPLEMENTATION
+   before including this file in *one* C file (translation unit)
+*/
+
+/*
+   malloc(), realloc(), free() and rand() can be overwritten by 
+   defining the following macros:
+
+   HLH_STRGEN_MALLOC
+   HLH_STRGEN_FREE
+   HLH_STRGEN_REALLOC
+   HLH_STRGEN_RAND
+*/
 
 #define _HLH_STRGEN_H_
 
@@ -49,6 +65,9 @@ HLH_strgen *HLH_strgen_model_load(FILE *f);
 
 //Read a model from memory buffer
 HLH_strgen *HLH_strgen_model_load_mem(const uint8_t *data, unsigned length);
+
+//Returns the last error as a string
+const char *HLH_strgen_get_error();
 
 #endif
 
