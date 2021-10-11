@@ -60,7 +60,7 @@ typedef struct
 
 HLH_json5_root *HLH_json_parse_file(const char *path);
 HLH_json5_root *HLH_json_parse_file_stream(FILE *f);
-HLH_json5_root *HLH_json_parse_char_buffer(char *buffer, size_t size); //buffer must be allocated by user
+HLH_json5_root *HLH_json_parse_char_buffer(const char *buffer, size_t size); //buffer must be allocated by user
 void            HLH_json_write_file(FILE *f, HLH_json5 *j);
 void            HLH_json_free(HLH_json5_root *r);
 
@@ -117,6 +117,14 @@ HLH_json5      *HLH_json_get_array_object(HLH_json5 *json, int index, HLH_json5 
 #include <math.h>
 #include <inttypes.h>
 
+#ifndef HLH_JSON_MALLOC
+#define HLH_JSON_MALLOC malloc
+#endif
+
+#ifndef HLH_JSON_FREE
+#define HLH_JSON_FREE free
+#endif
+
 #ifndef HLH_JSON_REALLOC
 #define HLH_JSON_REALLOC realloc
 #endif
@@ -138,13 +146,13 @@ static char *json5__parse_object(HLH_json5 *obj, char *p, char **err_code);
 HLH_json5_root *HLH_json_parse_file(const char *path)
 {
    //Load data from file
-   HLH_json5_root *r = HLH_JSON_REALLOC(NULL,sizeof(*r));
+   HLH_json5_root *r = HLH_JSON_MALLOC(sizeof(*r));
    memset(r,0,sizeof(*r));
-   FILE *f = fopen(path,"r");
+   FILE *f = fopen(path,"rb");
    fseek(f,0,SEEK_END);
    r->data_size = ftell(f);
-   rewind(f);
-   r->data = HLH_JSON_REALLOC(NULL,sizeof(*r->data)*(r->data_size+1));
+   fseek(f,0,SEEK_SET);
+   r->data = HLH_JSON_MALLOC(r->data_size+1);
    fread(r->data,r->data_size,1,f);
    r->data[r->data_size] = '\0';
    fclose(f);
@@ -158,12 +166,12 @@ HLH_json5_root *HLH_json_parse_file(const char *path)
 HLH_json5_root *HLH_json_parse_file_stream(FILE *f)
 {
    //Load data from file
-   HLH_json5_root *r = HLH_JSON_REALLOC(NULL,sizeof(*r));
+   HLH_json5_root *r = HLH_JSON_MALLOC(sizeof(*r));
    memset(r,0,sizeof(*r));
    fseek(f,0,SEEK_END);
    r->data_size = ftell(f);
    rewind(f);
-   r->data = HLH_JSON_REALLOC(NULL,sizeof(*r->data)*(r->data_size+1));
+   r->data = HLH_JSON_MALLOC(sizeof(*r->data)*(r->data_size+1));
    fread(r->data,r->data_size,1,f);
    r->data[r->data_size] = '\0';
 
@@ -173,11 +181,11 @@ HLH_json5_root *HLH_json_parse_file_stream(FILE *f)
    return r;
 }
 
-HLH_json5_root *HLH_json_parse_char_buffer(char *buffer, size_t size)
+HLH_json5_root *HLH_json_parse_char_buffer(const char *buffer, size_t size)
 {
-   HLH_json5_root *r = HLH_JSON_REALLOC(NULL,sizeof(*r));
+   HLH_json5_root *r = HLH_JSON_MALLOC(sizeof(*r));
    memset(r,0,sizeof(*r));
-   r->data = HLH_JSON_REALLOC(NULL,size+1);
+   r->data = HLH_JSON_MALLOC(size+1);
    memcpy(r->data,buffer,size);
    r->data[size] = '\0';
    r->data_size = size;
@@ -195,13 +203,14 @@ void HLH_json_write_file(FILE *f, HLH_json5 *j)
 
 void HLH_json_free(HLH_json5_root *r)
 {
-   r->data = HLH_JSON_REALLOC(r->data,0);
+   HLH_JSON_FREE(r->data);
    json5_free(&r->root);
+   HLH_JSON_FREE(r);
 }
 
 HLH_json5_root *HLH_json_create_root()
 {
-   HLH_json5_root *r = HLH_JSON_REALLOC(NULL,sizeof(*r));
+   HLH_json5_root *r = HLH_JSON_MALLOC(sizeof(*r));
    r->data = NULL;
    r->data_size = 0;
    r->root.name = NULL;
@@ -571,21 +580,20 @@ static void json5_push(HLH_json5_dyn_array *array, HLH_json5 ob)
    {
       array->size = 16;
       array->used = 0;
-      array->data = HLH_JSON_REALLOC(NULL,sizeof(ob)*array->size);
+      array->data = HLH_JSON_MALLOC(sizeof(ob)*array->size);
    }
    
-   array->data[array->used] = ob;
-   array->used++;
+   array->data[array->used++] = ob;
    if(array->used==array->size)
    {
-      array->size++;
+      array->size+=16;
       array->data = HLH_JSON_REALLOC(array->data,sizeof(ob)*array->size);
    }
 }
 
 static void json5_array_free(HLH_json5_dyn_array *array)
 {
-   array->data = HLH_JSON_REALLOC(array->data,0);
+   HLH_JSON_FREE(array->data);
    array->data = NULL;
    array->size = 0;
    array->used = 0;
@@ -871,9 +879,9 @@ static char *json5__parse_value(HLH_json5 *obj, char *p, char **err_code)
       if(is_dbl) 
          sscanf(buffer,"%lf",&obj->real);
       else if(is_hex) 
-         sscanf(buffer,"%lx",&obj->integer); // SCNx64 -> inttypes.h
+         sscanf(buffer,"%"PRIx64,&obj->integer); // SCNx64 -> inttypes.h
       else
-         sscanf(buffer,"%ld",&obj->integer); // SCNd64 -> inttypes.h
+         sscanf(buffer,"%" PRId64,&obj->integer); // SCNd64 -> inttypes.h
    }
    else 
    {
@@ -907,7 +915,7 @@ static void json5_free(HLH_json5 *root)
 {
    if(root->type==HLH_json5_array&&root->array.data!=NULL) 
    {
-      for(int i = 0, cnt = root->array.used;i<cnt;++i) 
+      for(int i = 0, cnt = root->array.used;i<cnt;i++) 
       {
          json5_free(&root->array.data[i]);
       }
@@ -916,7 +924,7 @@ static void json5_free(HLH_json5 *root)
 
    if(root->type==HLH_json5_object&&root->nodes.data!=NULL) 
    {
-      for(int i = 0,cnt = root->nodes.used;i<cnt;++i) 
+      for(int i = 0,cnt = root->nodes.used;i<cnt;i++) 
       {
          json5_free(&root->nodes.data[i]);
       }
@@ -941,7 +949,7 @@ static void json5_write(FILE *f, const HLH_json5 *o,int indent)
    else if(o->type==HLH_json5_bool)
       fprintf(f,"%s",o->boolean?"true":"false");
    else if(o->type==HLH_json5_integer) 
-      fprintf(f,"%ld",o->integer);
+      fprintf(f,"%" PRId64,o->integer);
    else if(o->type==HLH_json5_real) 
    {
       if(isnan(o->real)) 

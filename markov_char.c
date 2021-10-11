@@ -275,7 +275,7 @@ static void sentence_generate(int state_size)
    wint_t *last = (wint_t *)last_arr.data;
 
    //Generate starting words
-   int prefix = dyn_array_element(wint_t,&markov_chain_start,rand()%markov_chain_start.used);
+   int prefix = dyn_array_element(int32_t,&markov_chain_start,rand()%markov_chain_start.used);
    Markov_entry *e = &dyn_array_element(Markov_entry,&markov_chain,prefix);
    for(int i = 0;i<e->prefix.used;i++)
    {

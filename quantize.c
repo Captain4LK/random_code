@@ -131,7 +131,7 @@ static void compute_kmeans(cp_image_t *data)
       assignment[i] = -1.0f;
 
    int iter = 0;
-   int max_iter = 20;
+   int max_iter = 16;
    float *previous_variance = malloc(sizeof(*previous_variance)*quant_k);
    float variance = 0.0f;
    float delta = 0.0f;

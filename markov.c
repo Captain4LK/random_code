@@ -249,12 +249,13 @@ static void generate_chain(int state_size, dyn_array sentences)
       int max = dyn_array_element(dyn_array,&sentences,i).used;
       for(int j = 0;j<max;j++)
       {
+         if(j+state_size>max)
+            continue;
+
          int32_t pos = 0;
          dyn_array prefix;
          dyn_array_init(int32_t,&prefix,state_size);
 
-         if(j+state_size>max)
-            continue;
          for(int s = j;s<j+state_size;s++)
          {
             char *word = dyn_array_element(char *,&dyn_array_element(dyn_array,&sentences,i),s);
@@ -416,7 +417,7 @@ static void generate_sentence(char *input, int state_size)
       do
       {
          text_end = strpbrk(text_end,breakset);
-         if(text_end!=NULL)//&&*text_end!='\n')
+         if(text_end!=NULL)
          {
             replaced = *(text_end);
             *(text_end) = '\0';

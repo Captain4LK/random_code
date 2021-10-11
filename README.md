@@ -1,6 +1,6 @@
 # random_code
 
-Collection of random, small code (snippets) I wrote over time. All code in this repository (except in the external directory) is released to the Public Domain, see COPYING for more info.
+Collection of random, small code snippets I wrote over time. All code in this repository (except in the external directory) is released to the Public Domain, see COPYING for more info.
 
 ## brainfuck.c
 
