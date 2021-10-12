@@ -47,10 +47,9 @@ typedef struct
 //Variables
 static uint8_t mem[MEM_SIZE] = {0};
 static uint8_t *ptr = mem;
-
-//Resizing buffer for instructions
 static unsigned instr_ptr = 0; //Index to instr
 
+//Resizing buffer for instructions
 static struct
 {
    unsigned used;

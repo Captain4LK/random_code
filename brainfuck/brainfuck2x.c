@@ -23,7 +23,7 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 //Memory size
 #define MEM_SIZE (1<<24)
 
-//Universal dynamic array
+/*//Universal dynamic array
 #define dyn_array_init(type, array, space) \
    do { ((dyn_array *)(array))->size = (space); ((dyn_array *)(array))->used = 0; ((dyn_array *)(array))->data = malloc(sizeof(type)*(((dyn_array *)(array))->size)); } while(0)
 
@@ -34,7 +34,7 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
    do { ((type *)((dyn_array *)(array)->data))[((dyn_array *)(array))->used] = (element); ((dyn_array *)(array))->used++; if(((dyn_array *)(array))->used==((dyn_array *)(array))->size) { ((dyn_array *)(array))->size+=grow; ((dyn_array *)(array))->data = realloc(((dyn_array *)(array))->data,sizeof(type)*(((dyn_array *)(array))->size)); } } while(0)
 
 #define dyn_array_element(type, array, index) \
-   (((type *)((dyn_array *)(array)->data))[index])
+   (((type *)((dyn_array *)(array)->data))[index])*/
 
 #define EXPAND 256
 
@@ -58,19 +58,17 @@ typedef struct
    int arg1;
    int offset;
 }Instruction;
-
-typedef struct
-{
-   unsigned used;
-   unsigned size;
-   void *data;
-}dyn_array;
 //-------------------------------------
 
 //Variables
+
 //Resizing buffer for instructions
-static dyn_array instr_array = {0};
-static Instruction *instr = NULL;
+static struct
+{
+   unsigned used;
+   unsigned size;
+   Instruction *data;
+}instr = {0};
 //-------------------------------------
 
 //Function prototypes
@@ -89,7 +87,6 @@ int main(int argc, char *argv[])
    const char *path = NULL;
    const char *path_out = NULL;
    int mode_out = 0;
-
    for(int i = 1;i<argc;i++)
    {
       if(strcmp(argv[i],"--help")==0||
@@ -111,16 +108,18 @@ int main(int argc, char *argv[])
       }
    }
 
-   //Parse input file
-   //Removes all invalid characters
    if(path==NULL)
    {
       printf("No input file specified, try %s -h for help\n",argv[0]);
       return 0;
    }
+
+   //Read input file, remove all invalid characters, build instr array
    FILE *in = fopen(path,"r");
    preprocess(in);
    fclose(in);
+
+   //Performe some optimizations
    optimize();
 
    //Output code in prefered language
@@ -137,14 +136,18 @@ int main(int argc, char *argv[])
    if(path_out!=NULL)
       fclose(out);
 
-   dyn_array_free(Instruction,&instr_array);
+   //Cleanup
+   free(instr.data);
 
    return 0;
 }
 
 static void preprocess(FILE *in)
 {
-   dyn_array_init(Instruction,&instr_array,EXPAND);
+   instr.size = EXPAND;
+   instr.used = 0;
+   instr.data = calloc(sizeof(*instr.data),instr.size);
+
    while(!feof(in))
    {
       char c = fgetc(in);
@@ -162,49 +165,59 @@ static void preprocess(FILE *in)
       }
 
       if(next.opc)
-         dyn_array_add(Instruction,&instr_array,EXPAND,next);
+      {
+         instr.data[instr.used++] = next;
+
+         if(instr.used==instr.size)
+         {
+            instr.size+=EXPAND;
+            instr.data = realloc(instr.data,sizeof(*instr.data)*instr.size);
+         }
+      }
    }
-   dyn_array_add(Instruction,&instr_array,EXPAND,(Instruction){.opc = EXIT});
-   instr = (Instruction *)instr_array.data;
+
+   //There will always be enough space for at least one more element in the array since
+   //the array gets expanded after adding an element in the above code
+   instr.data[instr.used++] = (Instruction){.opc = EXIT};
 }
 
 static void optimize()
 {
-   int input_len = instr_array.used;
+   int input_len = instr.used;
+   unsigned fast;
+   unsigned end;
+   int arg;
+   Instruction in;
 
    //Pass 1 --> rle
    //Additions and subtractions of pointer/value
    //get rle encoded
    //i.e.: +++++++ gets converted to *ptr+=7
-   dyn_array old = instr_array;
-   dyn_array_init(Instruction,&instr_array,EXPAND);
-   unsigned i = 0;
-   unsigned end = old.used;
-   while(i<end)
+   end = instr.used;
+   instr.used = 0;
+   for(fast = 0;fast<end;)
    {
-      switch(instr[i].opc)
+      Instruction ins = instr.data[fast];
+      switch(ins.opc)
       {
       case PTR:
-         {
-            int arg = 0;
-            while(instr[i].opc==PTR) { arg+=instr[i].arg0; i++; }
-            Instruction in = {.opc = PTR, .arg0 = arg, .offset = 0};
-            dyn_array_add(Instruction,&instr_array,EXPAND,in);
-         }
+         arg = 0;
+         while(instr.data[fast].opc==PTR) { arg+=instr.data[fast].arg0; fast++; }
+         in = (Instruction) {.opc = PTR, .arg0 = arg, .offset = 0};
+         instr.data[instr.used++] = in;
          break;
       case VAL:
-         {
-            int arg = 0;
-            while(instr[i].opc==VAL) { arg+=instr[i].arg0; i++; }
-            Instruction in = {.opc = VAL, .arg0 = arg, .offset = 0};
-            dyn_array_add(Instruction,&instr_array,EXPAND,in);
-         }
+         arg = 0;
+         while(instr.data[fast].opc==VAL) { arg+=instr.data[fast].arg0; fast++; }
+         in = (Instruction) {.opc = VAL, .arg0 = arg, .offset = 0};
+         instr.data[instr.used++] = in;
          break;
-      default: dyn_array_add(Instruction,&instr_array,EXPAND,instr[i]); i++; break;
+      default:
+         instr.data[instr.used++] = ins;
+         fast++;
+         break;
       }
    }
-   dyn_array_free(Instruction,&old);
-   instr = (Instruction *)instr_array.data;
    //-------------------------------------
 
    //Pass 2 --> common patterns
@@ -212,26 +225,24 @@ static void optimize()
    //Some of these get taken care of here
    //Currently implemented:
    //[-] Clears the cell to zero
-   old = instr_array;
-   dyn_array_init(Instruction,&instr_array,EXPAND);
-   i = 0;
-   end = old.used;
-   while(i<end)
+   end = instr.used;
+   instr.used = 0;
+   for(fast = 0;fast<end;)
    {
-      //Pattern clear
-      if(i<old.used-2&&instr[i].opc==WHILE_START&&instr[i+1].opc==VAL&&instr[i+2].opc==WHILE_END)
+      Instruction ins = instr.data[fast];
+
+      if(fast<end-2&&ins.opc==WHILE_START&&instr.data[fast+1].opc==VAL&&instr.data[fast+2].opc==WHILE_END)
       {
-         Instruction ni = {.opc = CLEAR, .arg0 = 0, .offset = 0};
-         dyn_array_add(Instruction,&instr_array,EXPAND,ni);
-         i+=3;
+         in = (Instruction) {.opc = CLEAR, .arg0 = 0, .offset = 0};
+         instr.data[instr.used++] = in;
+         fast+=3;
       }
       else
       {
-         dyn_array_add(Instruction,&instr_array,EXPAND,instr[i]); i++;
+         instr.data[instr.used++] = ins;
+         fast++;
       }
    }
-   dyn_array_free(Instruction,&old);
-   instr = (Instruction *)instr_array.data;
    //-------------------------------------
 
    //Pass 3 --> offsets
@@ -240,34 +251,33 @@ static void optimize()
    //this makes such occurrences execute
    //as a single execution
    //Currently implemented: '+';',';'.';'>';'[-]'
-   old = instr_array;
-   dyn_array_init(Instruction,&instr_array,EXPAND);
-   i = 0;
-   end = old.used;
-   while(i<end)
+   end = instr.used;
+   instr.used = 0;
+   for(fast = 0;fast<end;)
    {
+      Instruction ins = instr.data[fast];
+
       //Offset add, val, clear, put, get
-      if(i<old.used-2&&
-         instr[i].opc==PTR&&instr[i+2].opc==PTR&&
-         instr[i].arg0==-instr[i+2].arg0)
+      if(fast<end-2&&
+         ins.opc==PTR&&instr.data[fast+2].opc==PTR&&
+         ins.arg0==-instr.data[fast+2].arg0)
       {
          Instruction ni;
-         switch(instr[i+1].opc)
+         switch(instr.data[fast+1].opc)
          {
-         case VAL: ni = (Instruction){.opc = VAL, .arg0 = instr[i+1].arg0, .offset = instr[i].arg0}; dyn_array_add(Instruction,&instr_array,EXPAND,ni); i+=3; break;
-         case CLEAR: ni = (Instruction){.opc = CLEAR, .offset = instr[i].arg0}; dyn_array_add(Instruction,&instr_array,EXPAND,ni); i+=3; break;
-         case PUT_VAL: ni = (Instruction){.opc = PUT_VAL, .offset = instr[i].arg0}; dyn_array_add(Instruction,&instr_array,EXPAND,ni); i+=3; break;
-         case GET_VAL: ni = (Instruction){.opc = GET_VAL, .offset = instr[i].arg0}; dyn_array_add(Instruction,&instr_array,EXPAND,ni); i+=3; break;
-         default: dyn_array_add(Instruction,&instr_array,EXPAND,instr[i]); i++; break;
+         case VAL: ni = (Instruction){.opc = VAL, .arg0 = instr.data[fast+1].arg0, .offset = instr.data[fast].arg0}; instr.data[instr.used++] = ni; fast+=3; break;
+         case CLEAR: ni = (Instruction){.opc = CLEAR, .offset = instr.data[fast].arg0}; instr.data[instr.used++] = ni; fast+=3; break;
+         case PUT_VAL: ni = (Instruction){.opc = PUT_VAL, .offset = instr.data[fast].arg0}; instr.data[instr.used++] = ni; fast+=3; break;
+         case GET_VAL: ni = (Instruction){.opc = GET_VAL, .offset = instr.data[fast].arg0}; instr.data[instr.used++] = ni; fast+=3; break;
+         default: instr.data[instr.used++] = ins; fast++; break;
          }
       }
       else
       {
-         dyn_array_add(Instruction,&instr_array,EXPAND,instr[i]); i++;
+         instr.data[instr.used++] = ins;
+         fast++;
       }
    }
-   dyn_array_free(Instruction,&old);
-   instr = (Instruction *)instr_array.data;
    //-------------------------------------
 
    //Pass 4 --> while
@@ -276,55 +286,55 @@ static void optimize()
    //Needs to be done last
    //since memory layout of instructions
    //changes in previous passes
-   old = instr_array;
-   dyn_array_init(Instruction,&instr_array,EXPAND);
-   i = 0;
-   end = old.used;
-   while(i<end)
+   end = instr.used;
+   instr.used = 0;
+   for(fast = 0;fast<end;)
    {
-      switch(instr[i].opc)
+      Instruction ins = instr.data[fast];
+      if(ins.opc==WHILE_END)
       {
-      case WHILE_END:
+         int sptr = instr.used;
+         int balance = -1;
+         while(balance) 
          {
-            int sptr = instr_array.used;
-            int balance = -1;
-            while(balance) 
-            {
-               sptr--;
-               if(((Instruction *)instr_array.data)[sptr].opc==WHILE_START) balance++;
-               else if(((Instruction *)instr_array.data)[sptr].opc==WHILE_END) balance--;
-            }
-            dyn_array_add(Instruction,&instr_array,EXPAND,instr[i]);
-            (&dyn_array_element(Instruction,&instr_array,sptr))->arg0 = instr_array.used-1;
-            (&dyn_array_element(Instruction,&instr_array,instr_array.used-1))->arg0 = sptr;
-            i++;
+            sptr--;
+            if(((Instruction *)instr.data)[sptr].opc==WHILE_START) balance++;
+            else if(((Instruction *)instr.data)[sptr].opc==WHILE_END) balance--;
          }
-         break;
-      default: dyn_array_add(Instruction,&instr_array,EXPAND,instr[i]); i++; break;
+         instr.data[instr.used++] = instr.data[fast];;
+         instr.data[sptr].arg0 = instr.used-1;
+         instr.data[instr.used-1].arg0 = sptr;
+         fast++;
+      }
+      else
+      {
+         instr.data[instr.used++] = ins;
+         fast++;
       }
    }
-   dyn_array_free(Instruction,&old);
-   instr = (Instruction *)instr_array.data;
    //-------------------------------------
 
-   printf("Optimization overview:\n\tInput length: %d\n\tOutput length: %d\n",input_len,instr_array.used);
+   //Downsize array
+   instr.data = realloc(instr.data,sizeof(*instr.data)*instr.used);
+
+   printf("Optimization overview:\n\tInput length: %d\n\tOutput length: %d\n",input_len,instr.used);
 }
 
 static void out_c(FILE *f)
 {
    fprintf(f,"#include <stdio.h>\n#include <stdint.h>\n\nuint8_t mem[%d];\nuint8_t *ptr = mem;\n\nint main(int argc, char **argv)\n{\n   FILE *in = stdin;\n   if(argc>1)\n      in = fopen(argv[1],\"r\");\n\n",MEM_SIZE);
    int indent = 1;
-   for(unsigned i = 0;i<instr_array.used;i++)
+   for(unsigned i = 0;i<instr.used;i++)
    {
-      switch(instr[i].opc)
+      switch(instr.data[i].opc)
       {
-      case PTR: PRINT_INDENT(indent); fprintf(f,"ptr+=%d;\n",instr[i].arg0); break;
-      case VAL: PRINT_INDENT(indent); fprintf(f,"*(ptr+%d)+=%d;\n",instr[i].offset,instr[i].arg0); break;
-      case GET_VAL: PRINT_INDENT(indent); fprintf(f,"*(ptr+%d) = fgetc(in);\n",instr[i].offset); break;
-      case PUT_VAL: PRINT_INDENT(indent); fprintf(f,"putchar(*(ptr+%d));\n",instr[i].offset); break;
+      case PTR: PRINT_INDENT(indent); fprintf(f,"ptr+=%d;\n",instr.data[i].arg0); break;
+      case VAL: PRINT_INDENT(indent); fprintf(f,"*(ptr+%d)+=%d;\n",instr.data[i].offset,instr.data[i].arg0); break;
+      case GET_VAL: PRINT_INDENT(indent); fprintf(f,"*(ptr+%d) = fgetc(in);\n",instr.data[i].offset); break;
+      case PUT_VAL: PRINT_INDENT(indent); fprintf(f,"putchar(*(ptr+%d));\n",instr.data[i].offset); break;
       case WHILE_START: PRINT_INDENT(indent); fprintf(f,"while(*ptr)\n"); PRINT_INDENT(indent); fprintf(f,"{\n"); indent++; break;
       case WHILE_END: indent--; PRINT_INDENT(indent); fprintf(f,"}\n"); break;
-      case CLEAR: PRINT_INDENT(indent); fprintf(f,"*(ptr+%d) = 0;\n",instr[i].offset); break;
+      case CLEAR: PRINT_INDENT(indent); fprintf(f,"*(ptr+%d) = 0;\n",instr.data[i].offset); break;
       case EXIT: break;
       }
    }
@@ -335,17 +345,17 @@ static void out_fortran(FILE *f)
 {
    fprintf(f,"program fortran\n   use iso_fortran_env\n   implicit none\n   character, dimension(:), allocatable::mem\n   integer(kind=4)::ptr\n   ptr = 0\n   allocate(mem(%d))\n\n",MEM_SIZE);
    int indent = 1;
-   for(unsigned i = 0;i<instr_array.used;i++)
+   for(unsigned i = 0;i<instr.used;i++)
    {
-      switch(instr[i].opc)
+      switch(instr.data[i].opc)
       {
-      case PTR: PRINT_INDENT(indent); fprintf(f,"ptr = ptr+(%d)\n",instr[i].arg0); break;
-      case VAL: PRINT_INDENT(indent); fprintf(f,"mem(ptr+%d) = CHAR(ICHAR(mem(ptr+(%d)))+(%d))\n",instr[i].offset,instr[i].offset,instr[i].arg0); break;
-      case GET_VAL: PRINT_INDENT(indent); fprintf(f,"call fget(mem(ptr+(%d)))\n",instr[i].offset); break;
-      case PUT_VAL: PRINT_INDENT(indent); fprintf(f,"call fput(mem(ptr+(%d)))\n",instr[i].offset); break;
+      case PTR: PRINT_INDENT(indent); fprintf(f,"ptr = ptr+(%d)\n",instr.data[i].arg0); break;
+      case VAL: PRINT_INDENT(indent); fprintf(f,"mem(ptr+%d) = CHAR(ICHAR(mem(ptr+(%d)))+(%d))\n",instr.data[i].offset,instr.data[i].offset,instr.data[i].arg0); break;
+      case GET_VAL: PRINT_INDENT(indent); fprintf(f,"call fget(mem(ptr+(%d)))\n",instr.data[i].offset); break;
+      case PUT_VAL: PRINT_INDENT(indent); fprintf(f,"call fput(mem(ptr+(%d)))\n",instr.data[i].offset); break;
       case WHILE_START: PRINT_INDENT(indent); fprintf(f,"do while(ICHAR(mem(ptr))/=0)\n"); indent++; break;
       case WHILE_END: indent--; PRINT_INDENT(indent); fprintf(f,"end do\n"); break;
-      case CLEAR: PRINT_INDENT(indent); fprintf(f,"mem(ptr+(%d)) = CHAR(0)\n",instr[i].offset); break;
+      case CLEAR: PRINT_INDENT(indent); fprintf(f,"mem(ptr+(%d)) = CHAR(0)\n",instr.data[i].offset); break;
       case EXIT: break;
       }
    }
