@@ -72,7 +72,6 @@ int main(int argc, char *argv[])
    //Parse cmd arguments
    const char *path = NULL;
    const char *path_io = NULL;
-
    for(int i = 1;i<argc;i++)
    {
       if(strcmp(argv[i],"--help")==0||
@@ -86,23 +85,26 @@ int main(int argc, char *argv[])
          path_io = READ_ARG(i);
    }
 
-   //Parse input file
-   //Removes all invalid characters
    if(path==NULL)
    {
       printf("No input file specified, try %s -h for help\n",argv[0]);
       return 0;
    }
+
+   //Read input file, remove all invalid characters, build instr array
    FILE *in = fopen(path,"r");
    preprocess(in);
    fclose(in);
+
+   //Performe some optimizations
    optimize();
 
-   //Run code
+   //Change input stream if specified in arguments
    FILE *input = stdin;
    if(path_io!=NULL)
       input = fopen(path_io,"r");
 
+   //Run code
    int running = 1;
    while(running)
    {
@@ -119,8 +121,8 @@ int main(int argc, char *argv[])
       }
    }
 
-   if(instr.data!=NULL)
-      free(instr.data);
+   //Cleanup
+   free(instr.data);
 
    return 0;
 }
