@@ -23,19 +23,6 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 //Memory size
 #define MEM_SIZE (1<<24)
 
-//Universal dynamic array
-#define dyn_array_init(type, array, space) \
-   do { ((dyn_array *)(array))->size = (space); ((dyn_array *)(array))->used = 0; ((dyn_array *)(array))->data = malloc(sizeof(type)*(((dyn_array *)(array))->size)); } while(0)
-
-#define dyn_array_free(type, array) \
-   do { if(((dyn_array *)(array))->data) { free(((dyn_array *)(array))->data); ((dyn_array *)(array))->data = NULL; ((dyn_array *)(array))->used = 0; ((dyn_array *)(array))->size = 0; }} while(0)
-
-#define dyn_array_add(type, array, grow, element) \
-   do { ((type *)((dyn_array *)(array)->data))[((dyn_array *)(array))->used] = (element); ((dyn_array *)(array))->used++; if(((dyn_array *)(array))->used==((dyn_array *)(array))->size) { ((dyn_array *)(array))->size+=grow; ((dyn_array *)(array))->data = realloc(((dyn_array *)(array))->data,sizeof(type)*(((dyn_array *)(array))->size)); } } while(0)
-
-#define dyn_array_element(type, array, index) \
-   (((type *)((dyn_array *)(array)->data))[index])
-
 #define EXPAND 256
 
 #define READ_ARG(I) \
@@ -55,13 +42,6 @@ typedef struct
    int arg1;
    int offset;
 }Instruction;
-
-typedef struct
-{
-   unsigned used;
-   unsigned size;
-   void *data;
-}dyn_array;
 //-------------------------------------
 
 //Variables
@@ -70,8 +50,13 @@ static uint8_t *ptr = mem;
 
 //Resizing buffer for instructions
 static unsigned instr_ptr = 0; //Index to instr
-static dyn_array instr_array = {0};
-static Instruction *instr = NULL;
+
+static struct
+{
+   unsigned used;
+   unsigned size;
+   Instruction *data;
+}instr = {0};
 //-------------------------------------
 
 //Function prototypes
@@ -121,26 +106,31 @@ int main(int argc, char *argv[])
    int running = 1;
    while(running)
    {
-      switch(instr[instr_ptr].opc)
+      switch(instr.data[instr_ptr].opc)
       {
-      case PTR: ptr+=instr[instr_ptr].arg0; instr_ptr++; break;
-      case VAL: *(ptr+instr[instr_ptr].offset)+=instr[instr_ptr].arg0; instr_ptr++; break;
-      case GET_VAL: *(ptr+instr[instr_ptr].offset) = fgetc(input); instr_ptr++; break;
-      case PUT_VAL: putchar(*(ptr+instr[instr_ptr].offset)); instr_ptr++; fflush(stdout); break;
-      case WHILE_START: if(!(*ptr)) instr_ptr = instr[instr_ptr].arg0; instr_ptr++; break;
-      case WHILE_END: instr_ptr = instr[instr_ptr].arg0; break;
-      case CLEAR: *(ptr+instr[instr_ptr].offset) = 0; instr_ptr++; break;
+      case PTR: ptr+=instr.data[instr_ptr].arg0; instr_ptr++; break;
+      case VAL: *(ptr+instr.data[instr_ptr].offset)+=instr.data[instr_ptr].arg0; instr_ptr++; break;
+      case GET_VAL: *(ptr+instr.data[instr_ptr].offset) = fgetc(input); instr_ptr++; break;
+      case PUT_VAL: putchar(*(ptr+instr.data[instr_ptr].offset)); instr_ptr++; fflush(stdout); break;
+      case WHILE_START: if(!(*ptr)) instr_ptr = instr.data[instr_ptr].arg0; instr_ptr++; break;
+      case WHILE_END: instr_ptr = instr.data[instr_ptr].arg0; break;
+      case CLEAR: *(ptr+instr.data[instr_ptr].offset) = 0; instr_ptr++; break;
       case EXIT: running = 0; break;
       }
    }
-   dyn_array_free(Instruction,&instr_array);
+
+   if(instr.data!=NULL)
+      free(instr.data);
 
    return 0;
 }
 
 static void preprocess(FILE *in)
 {
-   dyn_array_init(Instruction,&instr_array,EXPAND);
+   instr.size = EXPAND;
+   instr.used = 0;
+   instr.data = calloc(sizeof(*instr.data),instr.size);
+
    while(!feof(in))
    {
       char c = fgetc(in);
@@ -158,15 +148,25 @@ static void preprocess(FILE *in)
       }
 
       if(next.opc)
-         dyn_array_add(Instruction,&instr_array,EXPAND,next);
+      {
+         instr.data[instr.used++] = next;
+
+         if(instr.used==instr.size)
+         {
+            instr.size+=EXPAND;
+            instr.data = realloc(instr.data,sizeof(*instr.data)*instr.size);
+         }
+      }
    }
-   dyn_array_add(Instruction,&instr_array,EXPAND,(Instruction){.opc = EXIT});
-   instr = (Instruction *)instr_array.data;
+
+   //There will always be enough space for at least one more element in the array since
+   //the array gets expanded after adding an element in the above code
+   instr.data[instr.used++] = (Instruction){.opc = EXIT};
 }
 
 static void optimize()
 {
-   int input_len = instr_array.used;
+   int input_len = instr.used;
    unsigned fast;
    unsigned end;
    int arg;
@@ -176,27 +176,27 @@ static void optimize()
    //Additions and subtractions of pointer/value
    //get rle encoded
    //i.e.: +++++++ gets converted to *ptr+=7
-   end = instr_array.used;
-   instr_array.used = 0;
+   end = instr.used;
+   instr.used = 0;
    for(fast = 0;fast<end;)
    {
-      Instruction ins = instr[fast];
+      Instruction ins = instr.data[fast];
       switch(ins.opc)
       {
       case PTR:
          arg = 0;
-         while(instr[fast].opc==PTR) { arg+=instr[fast].arg0; fast++; }
+         while(instr.data[fast].opc==PTR) { arg+=instr.data[fast].arg0; fast++; }
          in = (Instruction) {.opc = PTR, .arg0 = arg, .offset = 0};
-         instr[instr_array.used++] = in;
+         instr.data[instr.used++] = in;
          break;
       case VAL:
          arg = 0;
-         while(instr[fast].opc==VAL) { arg+=instr[fast].arg0; fast++; }
+         while(instr.data[fast].opc==VAL) { arg+=instr.data[fast].arg0; fast++; }
          in = (Instruction) {.opc = VAL, .arg0 = arg, .offset = 0};
-         instr[instr_array.used++] = in;
+         instr.data[instr.used++] = in;
          break;
       default:
-         instr[instr_array.used++] = ins;
+         instr.data[instr.used++] = ins;
          fast++;
          break;
       }
@@ -208,21 +208,21 @@ static void optimize()
    //Some of these get taken care of here
    //Currently implemented:
    //[-] Clears the cell to zero
-   end = instr_array.used;
-   instr_array.used = 0;
+   end = instr.used;
+   instr.used = 0;
    for(fast = 0;fast<end;)
    {
-      Instruction ins = instr[fast];
+      Instruction ins = instr.data[fast];
 
-      if(fast<end-2&&ins.opc==WHILE_START&&instr[fast+1].opc==VAL&&instr[fast+2].opc==WHILE_END)
+      if(fast<end-2&&ins.opc==WHILE_START&&instr.data[fast+1].opc==VAL&&instr.data[fast+2].opc==WHILE_END)
       {
          in = (Instruction) {.opc = CLEAR, .arg0 = 0, .offset = 0};
-         instr[instr_array.used++] = in;
+         instr.data[instr.used++] = in;
          fast+=3;
       }
       else
       {
-         instr[instr_array.used++] = ins;
+         instr.data[instr.used++] = ins;
          fast++;
       }
    }
@@ -234,30 +234,30 @@ static void optimize()
    //this makes such occurrences execute
    //as a single execution
    //Currently implemented: '+';',';'.';'>';'[-]'
-   end = instr_array.used;
-   instr_array.used = 0;
+   end = instr.used;
+   instr.used = 0;
    for(fast = 0;fast<end;)
    {
-      Instruction ins = instr[fast];
+      Instruction ins = instr.data[fast];
 
       //Offset add, val, clear, put, get
       if(fast<end-2&&
-         ins.opc==PTR&&instr[fast+2].opc==PTR&&
-         ins.arg0==-instr[fast+2].arg0)
+         ins.opc==PTR&&instr.data[fast+2].opc==PTR&&
+         ins.arg0==-instr.data[fast+2].arg0)
       {
          Instruction ni;
-         switch(instr[fast+1].opc)
+         switch(instr.data[fast+1].opc)
          {
-         case VAL: ni = (Instruction){.opc = VAL, .arg0 = instr[fast+1].arg0, .offset = instr[fast].arg0}; dyn_array_add(Instruction,&instr_array,EXPAND,ni); fast+=3; break;
-         case CLEAR: ni = (Instruction){.opc = CLEAR, .offset = instr[fast].arg0}; dyn_array_add(Instruction,&instr_array,EXPAND,ni); fast+=3; break;
-         case PUT_VAL: ni = (Instruction){.opc = PUT_VAL, .offset = instr[fast].arg0}; dyn_array_add(Instruction,&instr_array,EXPAND,ni); fast+=3; break;
-         case GET_VAL: ni = (Instruction){.opc = GET_VAL, .offset = instr[fast].arg0}; dyn_array_add(Instruction,&instr_array,EXPAND,ni); fast+=3; break;
-         default: dyn_array_add(Instruction,&instr_array,EXPAND,instr[fast]); fast++; break;
+         case VAL: ni = (Instruction){.opc = VAL, .arg0 = instr.data[fast+1].arg0, .offset = instr.data[fast].arg0}; instr.data[instr.used++] = ni; fast+=3; break;
+         case CLEAR: ni = (Instruction){.opc = CLEAR, .offset = instr.data[fast].arg0}; instr.data[instr.used++] = ni; fast+=3; break;
+         case PUT_VAL: ni = (Instruction){.opc = PUT_VAL, .offset = instr.data[fast].arg0}; instr.data[instr.used++] = ni; fast+=3; break;
+         case GET_VAL: ni = (Instruction){.opc = GET_VAL, .offset = instr.data[fast].arg0}; instr.data[instr.used++] = ni; fast+=3; break;
+         default: instr.data[instr.used++] = ins; fast++; break;
          }
       }
       else
       {
-         instr[instr_array.used++] = ins;
+         instr.data[instr.used++] = ins;
          fast++;
       }
    }
@@ -269,35 +269,38 @@ static void optimize()
    //Needs to be done last
    //since memory layout of instructions
    //changes in previous passes
-   end = instr_array.used;
-   instr_array.used = 0;
+   end = instr.used;
+   instr.used = 0;
    for(fast = 0;fast<end;)
    {
-      Instruction ins = instr[fast];
+      Instruction ins = instr.data[fast];
       if(ins.opc==WHILE_END)
       {
-         int sptr = instr_array.used;
+         int sptr = instr.used;
          int balance = -1;
          while(balance) 
          {
             sptr--;
-            if(((Instruction *)instr_array.data)[sptr].opc==WHILE_START) balance++;
-            else if(((Instruction *)instr_array.data)[sptr].opc==WHILE_END) balance--;
+            if(((Instruction *)instr.data)[sptr].opc==WHILE_START) balance++;
+            else if(((Instruction *)instr.data)[sptr].opc==WHILE_END) balance--;
          }
-         dyn_array_add(Instruction,&instr_array,EXPAND,instr[fast]);
-         (&dyn_array_element(Instruction,&instr_array,sptr))->arg0 = instr_array.used-1;
-         (&dyn_array_element(Instruction,&instr_array,instr_array.used-1))->arg0 = sptr;
+         instr.data[instr.used++] = instr.data[fast];;
+         instr.data[sptr].arg0 = instr.used-1;
+         instr.data[instr.used-1].arg0 = sptr;
          fast++;
       }
       else
       {
-         instr[instr_array.used++] = ins;
+         instr.data[instr.used++] = ins;
          fast++;
       }
    }
    //-------------------------------------
 
-   printf("Optimization overview:\n\tInput length: %d\n\tOutput length: %d\n",input_len,instr_array.used);
+   //Downsize array
+   instr.data = realloc(instr.data,sizeof(*instr.data)*instr.used);
+
+   printf("Optimization overview:\n\tInput length: %d\n\tOutput length: %d\n",input_len,instr.used);
 }
 
 static void print_help(char **argv)
