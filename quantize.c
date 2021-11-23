@@ -44,6 +44,9 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 
 #define MAX(a,b) \
    ((a)>(b)?(a):(b))
+
+#define READ_ARG(I) \
+   ((++(I))<argc?argv[(I)]:NULL)
 //-------------------------------------
 
 //Typedefs
@@ -73,16 +76,42 @@ static cp_pixel_t pick_random_color(cp_image_t *data);
 static int nearest_color_idx(cp_pixel_t color, cp_pixel_t *color_list);
 static float distance(cp_pixel_t color0, cp_pixel_t color1);
 static float colors_variance(dyn_array *color_list);
+
+static void print_help(char **argv);
 //-------------------------------------
 
 //Function implementations
 
 int main(int argc, char **argv)
 {
-   if(argc<2)
-      return -1;
+   //Parse cmd arguments
+   const char *path_img = NULL;
+   const char *path_img_out = NULL;
+   const char *path_pal_out = NULL;
+   for(int i = 1;i<argc;i++)
+   {
+      if(strcmp(argv[i],"--help")==0||
+         strcmp(argv[i],"-help")==0||
+         strcmp(argv[i],"-h")==0||
+         strcmp(argv[i],"?")==0)
+         print_help(argv);
+      else if(strcmp(argv[i],"--img")==0)
+         path_img = READ_ARG(i);
+      else if(strcmp(argv[i],"--img_out")==0)
+         path_img_out = READ_ARG(i);
+      else if(strcmp(argv[i],"--pal_out")==0)
+         path_pal_out = READ_ARG(i);
+      else if(strcmp(argv[i],"--colors")==0)
+         quant_k = atoi(READ_ARG(i));
+   }
 
-   cp_image_t img = cp_load_png(argv[1]);
+   if(path_img==NULL)
+   {
+      printf("No input file specified, try %s -h for help\n",argv[0]);
+      return 0;
+   }
+
+   cp_image_t img = cp_load_png(path_img);
    if(img.pix==NULL)
    {
       puts("Failed to load image");
@@ -96,7 +125,20 @@ int main(int argc, char **argv)
       img.pix[i] = centroid_list[assignment[i]];
       img.pix[i].a = 255;
    }
-   cp_save_png("test.png",&img);
+
+   if(path_img_out!=NULL)
+      cp_save_png(path_img_out,&img);
+
+   if(path_pal_out!=NULL)
+   {
+      FILE *f = fopen(path_pal_out,"w");
+
+      fprintf(f,"JASC-PAL\n0100\n%d\n",quant_k);
+      for(int i = 0;i<quant_k;i++)
+         fprintf(f,"%d %d %d\n",centroid_list[i].r,centroid_list[i].g,centroid_list[i].b);
+
+      fclose(f);
+   }
 
    return 0;
 }
@@ -189,9 +231,12 @@ static cp_pixel_t colors_mean(dyn_array *color_list)
       b+=dyn_array_element(cp_pixel_t,color_list,i).b;
    }
 
-   r/=length;
-   g/=length;
-   b/=length;
+   if(length!=0)
+   {
+      r/=length;
+      g/=length;
+      b/=length;
+   }
 
    return (cp_pixel_t){.r = r, .g = g, .b = b};
 }
@@ -242,5 +287,16 @@ static float colors_variance(dyn_array *color_list)
    }
 
    return dist_sum/(float)length;
+}
+
+static void print_help(char **argv)
+{
+   printf("%s usage:\n"
+          "%s --img filename [--img_out filename] [--pal_out filename]\n"
+          "   --img\timage file to process\n"
+          "   --img_out\tprocessed image\n"
+          "   --pal_out\tgenerated palette\n"
+          "   --colors\ttargeted color amount\n",
+         argv[0],argv[0]);
 }
 //-------------------------------------
