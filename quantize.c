@@ -16,9 +16,9 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 #include <string.h>
 #include <stdint.h>
 #include <math.h>
+#include <inttypes.h>
+#include <time.h>
 
-#define CUTE_PATH_IMPLEMENTATION
-#include "external/cute_path.h"
 #define CUTE_PNG_IMPLEMENTATION
 #include "external/cute_png.h"
 //-------------------------------------
@@ -64,18 +64,24 @@ static dyn_array *cluster_list = NULL;
 static cp_pixel_t *centroid_list = NULL;
 static int *assignment = NULL;
 static int quant_k = 16;
+
+static struct
+{
+   cp_pixel_t colors[256];
+   int color_count;
+}palette_in = {0};
 //-------------------------------------
 
 //Function prototypes
 static void cluster_list_init();
 static void cluster_list_free();
-static void compute_kmeans(cp_image_t *data);
-static void get_cluster_centroid(cp_image_t *data);
+static void compute_kmeans(cp_image_t *data, int pal_in);
+static void get_cluster_centroid(cp_image_t *data, int pal_in);
 static cp_pixel_t colors_mean(dyn_array *color_list);
 static cp_pixel_t pick_random_color(cp_image_t *data);
 static int nearest_color_idx(cp_pixel_t color, cp_pixel_t *color_list);
-static float distance(cp_pixel_t color0, cp_pixel_t color1);
-static float colors_variance(dyn_array *color_list);
+static double distance(cp_pixel_t color0, cp_pixel_t color1);
+static double colors_variance(dyn_array *color_list);
 
 static void print_help(char **argv);
 //-------------------------------------
@@ -87,6 +93,7 @@ int main(int argc, char **argv)
    //Parse cmd arguments
    const char *path_img = NULL;
    const char *path_img_out = NULL;
+   const char *path_pal = NULL;
    const char *path_pal_out = NULL;
    for(int i = 1;i<argc;i++)
    {
@@ -99,10 +106,16 @@ int main(int argc, char **argv)
          path_img = READ_ARG(i);
       else if(strcmp(argv[i],"--img_out")==0)
          path_img_out = READ_ARG(i);
+      else if(strcmp(argv[i],"--pal")==0)
+         path_pal = READ_ARG(i);
       else if(strcmp(argv[i],"--pal_out")==0)
          path_pal_out = READ_ARG(i);
       else if(strcmp(argv[i],"--colors")==0)
-         quant_k = atoi(READ_ARG(i));
+      {
+         char *arg = READ_ARG(i);
+         arg = arg==NULL?"":arg;
+         quant_k = atoi(arg);
+      }
    }
 
    if(path_img==NULL)
@@ -118,12 +131,35 @@ int main(int argc, char **argv)
       return 0;
    }
 
-   compute_kmeans(&img);
+   if(path_pal!=NULL)
+   {
+      FILE *f = fopen(path_pal,"r");
+
+      fscanf(f,"JASC-PAL\n0100\n%d\n",&palette_in.color_count);
+      for(int i = 0;i<palette_in.color_count;i++)
+      {
+         fscanf(f,"%"SCNu8 "%"SCNu8 "%"SCNu8"\n",&palette_in.colors[i].r,&palette_in.colors[i].g,&palette_in.colors[i].b);
+         palette_in.colors[i].a = 255;
+      }
+
+      quant_k = palette_in.color_count;
+
+      fclose(f);
+   }
+
+   compute_kmeans(&img,path_pal!=NULL);
 
    for(int i = 0;i<img.w*img.h;i++)
    {
-      img.pix[i] = centroid_list[assignment[i]];
-      img.pix[i].a = 255;
+      if(path_pal!=NULL)
+      {
+         img.pix[i] = palette_in.colors[assignment[i]];
+      }
+      else
+      {
+         img.pix[i] = centroid_list[assignment[i]];
+         img.pix[i].a = 255;
+      }
    }
 
    if(path_img_out!=NULL)
@@ -164,27 +200,28 @@ static void cluster_list_free()
    cluster_list = NULL;
 }
 
-static void compute_kmeans(cp_image_t *data)
+static void compute_kmeans(cp_image_t *data, int pal_in)
 {
+   srand(time(NULL));
    cluster_list_init();
    centroid_list = malloc(sizeof(*centroid_list)*quant_k);
    assignment = malloc(sizeof(*assignment)*(data->w*data->h));
    for(int i = 0;i<(data->w*data->h);i++)
-      assignment[i] = -1.0f;
+      assignment[i] = -1.0;
 
    int iter = 0;
    int max_iter = 16;
-   float *previous_variance = malloc(sizeof(*previous_variance)*quant_k);
-   float variance = 0.0f;
-   float delta = 0.0f;
-   float delta_max = 0.0f;
-   float threshold = 0.00005f;
+   double *previous_variance = malloc(sizeof(*previous_variance)*quant_k);
+   double variance = 0.0;
+   double delta = 0.0;
+   double delta_max = 0.0;
+   double threshold = 0.00005f;
    for(int i = 0;i<quant_k;i++)
-      previous_variance[i] = 1.0f;
+      previous_variance[i] = 1.0;
 
    for(;;)
    {
-      get_cluster_centroid(data);
+      get_cluster_centroid(data,pal_in);
       cluster_list_init();
       for(int i = 0;i<data->w*data->h;i++)
       {
@@ -193,7 +230,7 @@ static void compute_kmeans(cp_image_t *data)
          dyn_array_add(cp_pixel_t,&cluster_list[assignment[i]],1,color);
       }
 
-      delta_max = 0.0f;
+      delta_max = 0.0;
       for(int i = 0;i<quant_k;i++)
       {
          variance = colors_variance(&cluster_list[i]);
@@ -206,17 +243,25 @@ static void compute_kmeans(cp_image_t *data)
          break;
    }
 
+   cluster_list_free();
    free(previous_variance);
 }
 
-static void get_cluster_centroid(cp_image_t *data)
+static void get_cluster_centroid(cp_image_t *data, int pal_in)
 {
    for(int i = 0;i<quant_k;i++)
    {
       if(cluster_list[i].used>0)
+      {
          centroid_list[i] = colors_mean(&cluster_list[i]);
+      }
       else
-         centroid_list[i] = pick_random_color(data);
+      {
+         if(pal_in)
+            centroid_list[i] = palette_in.colors[i];
+         else
+            centroid_list[i] = pick_random_color(data);
+      }
    }
 }
 
@@ -243,13 +288,13 @@ static cp_pixel_t colors_mean(dyn_array *color_list)
 
 static cp_pixel_t pick_random_color(cp_image_t *data)
 {
-   return data->pix[(int)(((float)rand()/(float)RAND_MAX)*data->w*data->h)];
+   return data->pix[(int)(((double)rand()/(double)RAND_MAX)*data->w*data->h)];
 }
 
 static int nearest_color_idx(cp_pixel_t color, cp_pixel_t *color_list)
 {
-   float dist_min = 0xfff;
-   float dist = 0.0f;
+   double dist_min = 0xfff;
+   double dist = 0.0;
    int idx = 0;
    for(int i = 0;i<quant_k;i++)
    {
@@ -264,29 +309,29 @@ static int nearest_color_idx(cp_pixel_t color, cp_pixel_t *color_list)
    return idx;
 }
 
-static float distance(cp_pixel_t color0, cp_pixel_t color1)
+static double distance(cp_pixel_t color0, cp_pixel_t color1)
 {
-   float mr = 0.5f*(color0.r+color1.r),
+   double mr = 0.5*(color0.r+color1.r),
       dr = color0.r-color1.r,
       dg = color0.g-color1.g,
       db = color0.b-color1.b;
-   float distance = (2*dr*dr)+(4*dg*dg)+(3*db*db)+(mr*((dr*dr)-(db*db))/256.0f);
-   return sqrt(distance)/(3.0f*255.0f);
+   double distance = (2.0*dr*dr)+(4.0*dg*dg)+(3.0*db*db)+(mr*((dr*dr)-(db*db))/256.0);
+   return sqrt(distance)/(3.0*255.0);
 }
 
-static float colors_variance(dyn_array *color_list)
+static double colors_variance(dyn_array *color_list)
 {
    int length = color_list->used;
    cp_pixel_t mean = colors_mean(color_list);
-   float dist = 0.0f;
-   float dist_sum = 0.0f;
+   double dist = 0.0;
+   double dist_sum = 0.0;
    for(int i = 0;i<length;i++)
    {
       dist = distance(dyn_array_element(cp_pixel_t,color_list,i),mean);
       dist_sum+=dist*dist;
    }
 
-   return dist_sum/(float)length;
+   return dist_sum/(double)length;
 }
 
 static void print_help(char **argv)
@@ -295,6 +340,7 @@ static void print_help(char **argv)
           "%s --img filename [--img_out filename] [--pal_out filename]\n"
           "   --img\timage file to process\n"
           "   --img_out\tprocessed image\n"
+          "   --pal\tpalette to convert image to\n"
           "   --pal_out\tgenerated palette\n"
           "   --colors\ttargeted color amount\n",
          argv[0],argv[0]);
