@@ -20,36 +20,59 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 
 //#defines
 
+//Configuration:
+
 //Memory size
 #define MEM_SIZE (1<<24)
+
+//GCC-only optimization
+#define COMPUTED_GOTO 0
+
+//Macros:
 
 #define READ_ARG(I) \
    ((++(I))<argc?argv[(I)]:NULL)
 
 #define ABS(a) ((a)<0?(-a):(a))
+
+//Hacky remapping
+#if !COMPUTED_GOTO
+#define case_OP_PTR case OP_PTR
+#define case_OP_VAL case OP_VAL
+#define case_OP_VAL_OFF case OP_VAL_OFF
+#define case_OP_GET_VAL case OP_GET_VAL
+#define case_OP_GET_VAL_OFF case OP_GET_VAL_OFF
+#define case_OP_PUT_VAL case OP_PUT_VAL
+#define case_OP_PUT_VAL_OFF case OP_PUT_VAL_OFF
+#define case_OP_CLEAR case OP_CLEAR
+#define case_OP_CLEAR_OFF case OP_CLEAR_OFF
+#define case_OP_WHILE_START case OP_WHILE_START
+#define case_OP_WHILE_END case OP_WHILE_END
+#define case_OP_EXIT case OP_EXIT
+#endif
 //-------------------------------------
 
 //Typedefs
 typedef enum 
 {
-   PTR = 1,
+   OP_PTR = 0,
 
-   VAL = 2,
-   VAL_OFF = 3,
+   OP_VAL = 1,
+   OP_VAL_OFF = 2,
 
-   GET_VAL = 4,
-   GET_VAL_OFF = 5,
+   OP_GET_VAL = 3,
+   OP_GET_VAL_OFF = 4,
 
-   PUT_VAL = 6,
-   PUT_VAL_OFF = 7,
+   OP_PUT_VAL = 5,
+   OP_PUT_VAL_OFF = 6,
 
-   CLEAR = 8,
-   CLEAR_OFF = 9,
+   OP_CLEAR = 7,
+   OP_CLEAR_OFF = 8,
 
-   WHILE_START = 10,
-   WHILE_END = 11,
+   OP_WHILE_START = 9,
+   OP_WHILE_END = 10,
 
-   EXIT = 12,
+   OP_EXIT = 11,
 }Opcode;
 
 typedef struct
@@ -66,7 +89,7 @@ static uint8_t *ptr = mem;
 //-------------------------------------
 
 //Function prototypes
-static void preprocess(FILE *in, Bytecode *code);
+static void compile(FILE *in, Bytecode *code);
 static void optimize(Bytecode *code);
 static void print_help(char **argv);
 
@@ -74,6 +97,7 @@ static void bytecode_init(Bytecode *code);
 static void bytecode_write(Bytecode *code, uint8_t byte);
 static void bytecode_free(Bytecode *code);
 static void bytecode_disassemble(const Bytecode *code);
+static void bytecode_run(const Bytecode *code, FILE *input);
 
 static void dump_bf(const Bytecode *code);
 static void dump_c(const Bytecode *code);
@@ -111,9 +135,9 @@ int main(int argc, char *argv[])
    Bytecode code = {0};
    bytecode_init(&code);
 
-   //Read input file, remove all invalid characters, build instr array
+   //Read input file, remove all invalid characters, compile code
    FILE *in = fopen(path,"r");
-   preprocess(in,&code);
+   compile(in,&code);
    fclose(in);
 
    //Performe some optimizations
@@ -137,33 +161,7 @@ int main(int argc, char *argv[])
    if(path_io!=NULL)
       input = fopen(path_io,"r");
 
-   //Run code
-   int running = 1;
-   uint8_t *ip = code.code;
-   while(running)
-   {
-      switch(*ip++)
-      {
-      case PTR: ptr+=(int8_t)(*ip++); break;
-
-      case VAL: *ptr+=(int8_t)(*ip++); break;
-      case VAL_OFF: *(ptr+(*(ip)))+=(int8_t)*(ip+1); ip+=2; break;
-
-      case GET_VAL: *ptr = fgetc(input); break;
-      case GET_VAL_OFF: *(ptr+(*ip++)) = fgetc(input); break;
-
-      case PUT_VAL: putchar(*ptr); fflush(stdout); break;
-      case PUT_VAL_OFF: putchar(*(ptr+(*ip++))); fflush(stdout); break;
-
-      case CLEAR: *ptr = 0; break;
-      case CLEAR_OFF: *(ptr+(*ip++)) = 0; break;
-
-      case WHILE_START: if(!(*ptr)) {ip = code.code+(*((int32_t *)ip)); ip+=5;} else ip+=4; break;
-      case WHILE_END: ip = code.code+(*((int32_t *)ip)); break;
-
-      case EXIT: running = 0; break;
-      }
-   }
+   bytecode_run(&code,input);
 
    //Cleanup
    bytecode_free(&code);
@@ -171,24 +169,24 @@ int main(int argc, char *argv[])
    return 0;
 }
 
-static void preprocess(FILE *in, Bytecode *code)
+static void compile(FILE *in, Bytecode *code)
 {
-   while(!feof(in))
+   while(!feof(in)&&!ferror(in))
    {
       switch(fgetc(in))
       {
-      case '>': bytecode_write(code,PTR); bytecode_write(code,1); break;
-      case '<': bytecode_write(code,PTR); bytecode_write(code,-1); break;
-      case '+': bytecode_write(code,VAL); bytecode_write(code,1); break;
-      case '-': bytecode_write(code,VAL); bytecode_write(code,-1); break;
-      case ',': bytecode_write(code,GET_VAL); break;
-      case '.': bytecode_write(code,PUT_VAL); break;
-      case '[': bytecode_write(code,WHILE_START); bytecode_write(code,0); bytecode_write(code,0); bytecode_write(code,0); bytecode_write(code,0); break;
-      case ']': bytecode_write(code,WHILE_END); bytecode_write(code,0); bytecode_write(code,0); bytecode_write(code,0); bytecode_write(code,0); break;
+      case '>': bytecode_write(code,OP_PTR); bytecode_write(code,1); break;
+      case '<': bytecode_write(code,OP_PTR); bytecode_write(code,-1); break;
+      case '+': bytecode_write(code,OP_VAL); bytecode_write(code,1); break;
+      case '-': bytecode_write(code,OP_VAL); bytecode_write(code,-1); break;
+      case ',': bytecode_write(code,OP_GET_VAL); break;
+      case '.': bytecode_write(code,OP_PUT_VAL); break;
+      case '[': bytecode_write(code,OP_WHILE_START); bytecode_write(code,0); bytecode_write(code,0); bytecode_write(code,0); bytecode_write(code,0); break;
+      case ']': bytecode_write(code,OP_WHILE_END); bytecode_write(code,0); bytecode_write(code,0); bytecode_write(code,0); bytecode_write(code,0); break;
       }
    }
 
-   bytecode_write(code,EXIT);
+   bytecode_write(code,OP_EXIT);
 }
 
 static void optimize(Bytecode *code)
@@ -207,25 +205,25 @@ static void optimize(Bytecode *code)
    {
       switch(code->code[fast])
       {
-      case PTR:
+      case OP_PTR:
          arg = 0;
-         while(code->code[fast]==PTR&&arg!=INT8_MIN&&arg!=INT8_MAX) { arg+=(int8_t)code->code[fast+1]; fast+=2; }
-         bytecode_write(code,PTR);
+         while(code->code[fast]==OP_PTR&&arg!=INT8_MIN&&arg!=INT8_MAX) { arg+=(int8_t)code->code[fast+1]; fast+=2; }
+         bytecode_write(code,OP_PTR);
          bytecode_write(code,arg);
          break;
-      case VAL:
+      case OP_VAL:
          arg = 0;
-         while(code->code[fast]==VAL&&arg!=INT8_MIN&&arg!=INT8_MAX) { arg+=(int8_t)code->code[fast+1]; fast+=2; }
-         bytecode_write(code,VAL);
+         while(code->code[fast]==OP_VAL&&arg!=INT8_MIN&&arg!=INT8_MAX) { arg+=(int8_t)code->code[fast+1]; fast+=2; }
+         bytecode_write(code,OP_VAL);
          bytecode_write(code,arg);
          break;
-      case GET_VAL:
-      case PUT_VAL:
-      case EXIT:
+      case OP_GET_VAL:
+      case OP_PUT_VAL:
+      case OP_EXIT:
          bytecode_write(code,code->code[fast++]);
          break;
-      case WHILE_START:
-      case WHILE_END:
+      case OP_WHILE_START:
+      case OP_WHILE_END:
          bytecode_write(code,code->code[fast++]);
          bytecode_write(code,code->code[fast++]);
          bytecode_write(code,code->code[fast++]);
@@ -245,27 +243,27 @@ static void optimize(Bytecode *code)
    code->code_used = 0;
    for(fast = 0;fast<end;)
    {
-      if(fast<end-12&&code->code[fast]==WHILE_START&&code->code[fast+5]==VAL&&code->code[fast+7]==WHILE_END)
+      if(fast<end-12&&code->code[fast]==OP_WHILE_START&&code->code[fast+5]==OP_VAL&&code->code[fast+7]==OP_WHILE_END)
       {
-         bytecode_write(code,CLEAR);
+         bytecode_write(code,OP_CLEAR);
          fast+=12;
       }
       else
       {
          switch(code->code[fast])
          {
-         case VAL:
-         case PTR:
+         case OP_GET_VAL:
+         case OP_PUT_VAL:
+         case OP_EXIT:
+            bytecode_write(code,code->code[fast++]);
+            break;
+         case OP_VAL:
+         case OP_PTR:
             bytecode_write(code,code->code[fast++]);
             bytecode_write(code,code->code[fast++]);
             break;
-         case GET_VAL:
-         case PUT_VAL:
-         case EXIT:
-            bytecode_write(code,code->code[fast++]);
-            break;
-         case WHILE_START:
-         case WHILE_END:
+         case OP_WHILE_START:
+         case OP_WHILE_END:
             bytecode_write(code,code->code[fast++]);
             bytecode_write(code,code->code[fast++]);
             bytecode_write(code,code->code[fast++]);
@@ -282,39 +280,45 @@ static void optimize(Bytecode *code)
    //a specific location and back for a single command,
    //this makes such occurrences execute
    //as a single execution
-   //Currently implemented: '+';',';'.';'>';'[-]'
+   //Currently implemented: '+';',';'.';'[-]'
    end = code->code_used;
    code->code_used = 0;
    for(fast = 0;fast<end;)
    {
-      if(code->code[fast]==PTR&&code->code[fast+2]!=WHILE_START&&code->code[fast+2]!=WHILE_END&&code->code[fast+2]!=PTR&&code->code[fast+4]==PTR&&code->code[fast+1]==-code->code[fast+5])
+      if(fast<end-5&&code->code[fast]==OP_PTR&&code->code[fast+2]!=OP_WHILE_START&&code->code[fast+2]!=OP_WHILE_END&&code->code[fast+2]!=OP_PTR&&code->code[fast+2]!=OP_VAL&&code->code[fast+3]==OP_PTR&&((int)(int8_t)code->code[fast+1])==-((int)(int8_t)code->code[fast+4]))
       {
          switch(code->code[fast+2])
          {
-         case CLEAR: bytecode_write(code,CLEAR_OFF); bytecode_write(code,code->code[fast+1]); break;
-         case GET_VAL: bytecode_write(code,GET_VAL_OFF); bytecode_write(code,code->code[fast+1]); break;
-         case PUT_VAL: bytecode_write(code,PUT_VAL_OFF); bytecode_write(code,code->code[fast+1]); break;
-         case VAL: bytecode_write(code,VAL_OFF); bytecode_write(code,code->code[fast+1]); bytecode_write(code,code->code[fast+4]); break;
+         case OP_CLEAR: bytecode_write(code,OP_CLEAR_OFF); bytecode_write(code,code->code[fast+1]); break;
+         case OP_GET_VAL: bytecode_write(code,OP_GET_VAL_OFF); bytecode_write(code,code->code[fast+1]); break;
+         case OP_PUT_VAL: bytecode_write(code,OP_PUT_VAL_OFF); bytecode_write(code,code->code[fast+1]); break;
          }
+         fast+=5;
+      }
+      else if(fast<end-6&&code->code[fast]==OP_PTR&&code->code[fast+2]==OP_VAL&&code->code[fast+4]==OP_PTR&&((int)(int8_t)code->code[fast+1])==-((int)(int8_t)code->code[fast+5]))
+      {
+         bytecode_write(code,OP_VAL_OFF);
+         bytecode_write(code,code->code[fast+1]);
+         bytecode_write(code,code->code[fast+3]);
          fast+=6;
       }
       else
       {
          switch(code->code[fast])
          {
-         case VAL:
-         case PTR:
+         case OP_VAL:
+         case OP_PTR:
             bytecode_write(code,code->code[fast++]);
             bytecode_write(code,code->code[fast++]);
             break;
-         case GET_VAL:
-         case PUT_VAL:
-         case CLEAR:
-         case EXIT:
+         case OP_GET_VAL:
+         case OP_PUT_VAL:
+         case OP_CLEAR:
+         case OP_EXIT:
             bytecode_write(code,code->code[fast++]);
             break;
-         case WHILE_START:
-         case WHILE_END:
+         case OP_WHILE_START:
+         case OP_WHILE_END:
             bytecode_write(code,code->code[fast++]);
             bytecode_write(code,code->code[fast++]);
             bytecode_write(code,code->code[fast++]);
@@ -335,7 +339,7 @@ static void optimize(Bytecode *code)
    end = code->code_used;
    for(fast = 0;fast<end;)
    {
-      if(code->code[fast]==WHILE_START)
+      if(code->code[fast]==OP_WHILE_START)
       {
          int sptr = fast+5;
          int balance = 1;
@@ -344,27 +348,27 @@ static void optimize(Bytecode *code)
          {
             switch(code->code[sptr])
             {
-            case VAL:
-            case PTR:
-            case CLEAR_OFF:
-            case GET_VAL_OFF:
-            case PUT_VAL_OFF:
+            case OP_VAL:
+            case OP_PTR:
+            case OP_CLEAR_OFF:
+            case OP_GET_VAL_OFF:
+            case OP_PUT_VAL_OFF:
                sptr+=2;
                break;
-            case GET_VAL:
-            case PUT_VAL:
-            case CLEAR:
-            case EXIT:
+            case OP_GET_VAL:
+            case OP_PUT_VAL:
+            case OP_CLEAR:
+            case OP_EXIT:
                sptr+=1;
                break;
-            case VAL_OFF:
+            case OP_VAL_OFF:
                sptr+=3;
                break;
-            case WHILE_START:
+            case OP_WHILE_START:
                balance++;
                sptr+=5;
                break;
-            case WHILE_END:
+            case OP_WHILE_END:
                balance--;
                sptr+=5;
                break;
@@ -377,24 +381,24 @@ static void optimize(Bytecode *code)
 
       switch(code->code[fast])
       {
-      case VAL_OFF:
+      case OP_VAL_OFF:
          fast+=3;
          break;
-      case VAL:
-      case PTR:
-      case GET_VAL_OFF:
-      case PUT_VAL_OFF:
-      case CLEAR_OFF:
+      case OP_VAL:
+      case OP_PTR:
+      case OP_GET_VAL_OFF:
+      case OP_PUT_VAL_OFF:
+      case OP_CLEAR_OFF:
          fast+=2;
          break;
-      case GET_VAL:
-      case PUT_VAL:
-      case CLEAR:
-      case EXIT:
+      case OP_GET_VAL:
+      case OP_PUT_VAL:
+      case OP_CLEAR:
+      case OP_EXIT:
          fast+=1;
          break;
-      case WHILE_START:
-      case WHILE_END:
+      case OP_WHILE_START:
+      case OP_WHILE_END:
          fast+=5;
          break;
       }
@@ -453,42 +457,100 @@ static void bytecode_disassemble(const Bytecode *code)
    {
       switch(code->code[i++])
       {
-      case PTR:
+      case OP_PTR:
          printf("%8d|PTR        |%8d|        |\n",i-1,(int8_t)code->code[i]); i+=1;
          break;
-      case VAL:
+      case OP_VAL:
          printf("%8d|VAL        |%8d|        |\n",i-1,(int8_t)code->code[i]); i+=1;
          break;
-      case VAL_OFF:
+      case OP_VAL_OFF:
          printf("%8d|VAL_OFF    |%8d|%8d|\n",i-1,(int8_t)code->code[i+1],(int8_t)code->code[i]); i+=2;
          break;
-      case GET_VAL:
+      case OP_GET_VAL:
          printf("%8d|GET_VAL    |        |        |\n",i-1);
          break;
-      case GET_VAL_OFF:
+      case OP_GET_VAL_OFF:
          printf("%8d|GET_VAL_OFF|        |%8d|\n",i-1,(int8_t)code->code[i]); i+=1;
          break;
-      case PUT_VAL:
+      case OP_PUT_VAL:
          printf("%8d|PUT_VAL    |        |        |\n",i-1);
          break;
-      case PUT_VAL_OFF:
+      case OP_PUT_VAL_OFF:
          printf("%8d|PUT_VAL_OFF|        |%8d|\n",i-1,(int8_t)code->code[i]); i+=1;
          break;
-      case CLEAR:
+      case OP_CLEAR:
          printf("%8d|CLEAR      |        |        |\n",i-1);
          break;
-      case CLEAR_OFF:
+      case OP_CLEAR_OFF:
          printf("%8d|CLEAR_OFF  |        |%8d|\n",i-1,(int8_t)code->code[i]); i+=1;
          break;
-      case WHILE_START:
+      case OP_WHILE_START:
          printf("%8d|WHILE      |%8d|        |\n",i-1,*((int32_t *)&code->code[i])); i+=4;
          break;
-      case WHILE_END:
+      case OP_WHILE_END:
          printf("%8d|ELIHW      |%8d|        |\n",i-1,*((int32_t *)&code->code[i])); i+=4;
          break;
-      case EXIT:
+      case OP_EXIT:
          printf("%8d|EXIT       |        |        |\n",i-1);
          break;
+      }
+   }
+}
+
+static void bytecode_run(const Bytecode *code, FILE *input)
+{
+#if COMPUTED_GOTO
+   const void *dispatch_table[] =
+   {
+      &&case_OP_PTR,
+      &&case_OP_VAL,
+      &&case_OP_VAL_OFF,
+      &&case_OP_GET_VAL,
+      &&case_OP_GET_VAL_OFF,
+      &&case_OP_PUT_VAL,
+      &&case_OP_PUT_VAL_OFF,
+      &&case_OP_CLEAR,
+      &&case_OP_CLEAR_OFF,
+      &&case_OP_WHILE_START,
+      &&case_OP_WHILE_END,
+      &&case_OP_EXIT,
+   };
+
+#define DISPATCH() goto *dispatch_table[*ip++]
+#else
+#define DISPATCH() goto next
+#endif
+
+   uint8_t *ip = code->code;
+
+#if COMPUTED_GOTO
+   DISPATCH();
+#endif
+   for(;;)
+   {
+#if !COMPUTED_GOTO
+   next:
+#endif
+      switch(*ip++)
+      {
+      case_OP_PTR: ptr+=(int8_t)(*ip++); DISPATCH();
+
+      case_OP_VAL: *ptr+=(int8_t)(*ip++); DISPATCH();
+      case_OP_VAL_OFF: *(ptr+(int8_t)(*ip))+=(int8_t)*(ip+1); ip+=2; DISPATCH();
+
+      case_OP_GET_VAL: *ptr = fgetc(input); DISPATCH();
+      case_OP_GET_VAL_OFF: *(ptr+(int8_t)(*ip++)) = fgetc(input); DISPATCH();
+
+      case_OP_PUT_VAL: putchar(*ptr); fflush(stdout); DISPATCH();
+      case_OP_PUT_VAL_OFF: putchar(*(ptr+(int8_t)(*ip++))); fflush(stdout); DISPATCH();
+
+      case_OP_CLEAR: *ptr = 0; DISPATCH();
+      case_OP_CLEAR_OFF: *(ptr+(int8_t)(*ip++)) = 0; DISPATCH();
+
+      case_OP_WHILE_START: if(!(*ptr)) {ip = code->code+(*((int32_t *)ip)); ip+=5;} else ip+=4; DISPATCH();
+      case_OP_WHILE_END: ip = code->code+(*((int32_t *)ip)); DISPATCH();
+
+      case_OP_EXIT: return;
       }
    }
 }
@@ -500,17 +562,17 @@ static void dump_bf(const Bytecode *code)
    {
       switch(code->code[i++])
       {
-      case PTR:
+      case OP_PTR:
          for(int j = 0;j<ABS((int8_t)code->code[i]);j++)
             fputc((int8_t)code->code[i]<0?'<':'>',stdout);
          i++;
          break;
-      case VAL:
+      case OP_VAL:
          for(int j = 0;j<ABS((int8_t)code->code[i]);j++)
             fputc((int8_t)code->code[i]<0?'-':'+',stdout);
          i++;
          break;
-      case VAL_OFF:
+      case OP_VAL_OFF:
          for(int j = 0;j<ABS((int8_t)code->code[i]);j++)
             fputc((int8_t)code->code[i]<0?'<':'>',stdout);
 
@@ -522,10 +584,10 @@ static void dump_bf(const Bytecode *code)
 
          i+=2;
          break;
-      case GET_VAL:
+      case OP_GET_VAL:
          fputc(',',stdout);
          break;
-      case GET_VAL_OFF:
+      case OP_GET_VAL_OFF:
          for(int j = 0;j<ABS((int8_t)code->code[i]);j++)
             fputc((int8_t)code->code[i]<0?'<':'>',stdout);
 
@@ -533,13 +595,12 @@ static void dump_bf(const Bytecode *code)
 
          for(int j = 0;j<ABS((int8_t)code->code[i]);j++)
             fputc((int8_t)code->code[i]<0?'>':'<',stdout);
-
-         i+=2;
+         i++;
          break;
-      case PUT_VAL:
+      case OP_PUT_VAL:
          fputc('.',stdout);
          break;
-      case PUT_VAL_OFF:
+      case OP_PUT_VAL_OFF:
          for(int j = 0;j<ABS((int8_t)code->code[i]);j++)
             fputc((int8_t)code->code[i]<0?'<':'>',stdout);
 
@@ -548,14 +609,14 @@ static void dump_bf(const Bytecode *code)
          for(int j = 0;j<ABS((int8_t)code->code[i]);j++)
             fputc((int8_t)code->code[i]<0?'>':'<',stdout);
 
-         i+=2;
+         i++;
          break;
-      case CLEAR:
+      case OP_CLEAR:
          fputc('[',stdout);
          fputc('-',stdout);
          fputc(']',stdout);
          break;
-      case CLEAR_OFF:
+      case OP_CLEAR_OFF:
          for(int j = 0;j<ABS((int8_t)code->code[i]);j++)
             fputc((int8_t)code->code[i]<0?'<':'>',stdout);
 
@@ -565,13 +626,13 @@ static void dump_bf(const Bytecode *code)
 
          for(int j = 0;j<ABS((int8_t)code->code[i]);j++)
             fputc((int8_t)code->code[i]<0?'>':'<',stdout);
-         i+=2;
+         i++;
          break;
-      case WHILE_START:
+      case OP_WHILE_START:
          fputc('[',stdout);
          i+=4;
          break;
-      case WHILE_END:
+      case OP_WHILE_END:
          fputc(']',stdout);
          i+=4;
          break;
@@ -591,22 +652,26 @@ static void dump_c(const Bytecode *code)
    {
       switch(code->code[i++])
       {
-      case PTR: PRINT_INDENT(indent); printf("ptr+=%d;\n",(int8_t)code->code[i]); i++; break;
-      case VAL: PRINT_INDENT(indent); printf("*ptr+=%d;\n",(int8_t)code->code[i]); i++; break;
-      case VAL_OFF: PRINT_INDENT(indent); printf("*(ptr+%d)+=%d;\n",(int8_t)code->code[i],(int8_t)code->code[i+1]); i+=2; break;
-      case GET_VAL: PRINT_INDENT(indent); printf("*ptr = fgetc(in);\n"); break;
-      case GET_VAL_OFF: PRINT_INDENT(indent); printf("*(ptr+%d) = fgetc(in);\n",(int8_t)code->code[i]); i++; break;
-      case PUT_VAL: PRINT_INDENT(indent); printf("putchar(*ptr);\n"); break;
-      case PUT_VAL_OFF: PRINT_INDENT(indent); printf("putchar(*(ptr+%d));\n",(int8_t)code->code[i]); i++; break;
-      case CLEAR: PRINT_INDENT(indent); printf("*ptr = 0;\n"); break;
-      case CLEAR_OFF: PRINT_INDENT(indent); printf("*(ptr+%d) = 0;\n",(int8_t)code->code[i]); i++; break;
-      case WHILE_START: PRINT_INDENT(indent); printf("while(*ptr)\n"); PRINT_INDENT(indent); printf("{\n"); indent++; i+=4; break;
-      case WHILE_END: indent--; PRINT_INDENT(indent); printf("}\n"); i+=4; break;
-      case EXIT: break;
+      case OP_PTR: PRINT_INDENT(indent); printf("ptr+=%d;\n",(int8_t)code->code[i]); i++; break;
+      case OP_VAL: PRINT_INDENT(indent); printf("*ptr+=%d;\n",(int8_t)code->code[i]); i++; break;
+      case OP_VAL_OFF: PRINT_INDENT(indent); printf("*(ptr+%d)+=%d;\n",(int8_t)code->code[i],(int8_t)code->code[i+1]); i+=2; break;
+      case OP_GET_VAL: PRINT_INDENT(indent); printf("*ptr = fgetc(in);\n"); break;
+      case OP_GET_VAL_OFF: PRINT_INDENT(indent); printf("*(ptr+%d) = fgetc(in);\n",(int8_t)code->code[i]); i++; break;
+      case OP_PUT_VAL: PRINT_INDENT(indent); printf("putchar(*ptr);\n"); break;
+      case OP_PUT_VAL_OFF: PRINT_INDENT(indent); printf("putchar(*(ptr+%d));\n",(int8_t)code->code[i]); i++; break;
+      case OP_CLEAR: PRINT_INDENT(indent); printf("*ptr = 0;\n"); break;
+      case OP_CLEAR_OFF: PRINT_INDENT(indent); printf("*(ptr+%d) = 0;\n",(int8_t)code->code[i]); i++; break;
+      case OP_WHILE_START: PRINT_INDENT(indent); printf("while(*ptr)\n"); PRINT_INDENT(indent); printf("{\n"); indent++; i+=4; break;
+      case OP_WHILE_END: indent--; PRINT_INDENT(indent); printf("}\n"); i+=4; break;
+      case OP_EXIT: break;
       }
    }
    printf("\n   if(argc>1)\n      fclose(in);\n\n   return 0;\n}");
 
 #undef PRINT_INDENT
 }
+
+#undef MEM_SIZE
+#undef READ_ARG
+#undef ABS
 //-------------------------------------
