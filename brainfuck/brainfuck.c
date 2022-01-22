@@ -559,6 +559,8 @@ static void bytecode_run(const Bytecode *code, FILE *input)
       case_OP_EXIT: return;
       }
    }
+
+#undef DISPATCH
 }
 
 static void dump_bf(const Bytecode *code)
@@ -680,4 +682,5 @@ static void dump_c(const Bytecode *code)
 #undef MEM_SIZE
 #undef READ_ARG
 #undef ABS
+#undef COMPUTED_GOTO
 //-------------------------------------
