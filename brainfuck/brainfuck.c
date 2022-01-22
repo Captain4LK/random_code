@@ -375,7 +375,7 @@ static void optimize(Bytecode *code)
             }
          }
 
-         *((int32_t *)&code->code[fast+1]) = sptr-5;
+         *((int32_t *)&code->code[fast+1]) = sptr;
          *((int32_t *)&code->code[sptr-4]) = fast;
       }
 
@@ -526,6 +526,7 @@ static void bytecode_run(const Bytecode *code, FILE *input)
 #if COMPUTED_GOTO
    DISPATCH();
 #endif
+
    for(;;)
    {
 #if !COMPUTED_GOTO
@@ -547,7 +548,12 @@ static void bytecode_run(const Bytecode *code, FILE *input)
       case_OP_CLEAR: *ptr = 0; DISPATCH();
       case_OP_CLEAR_OFF: *(ptr+(int8_t)(*ip++)) = 0; DISPATCH();
 
-      case_OP_WHILE_START: if(!(*ptr)) {ip = code->code+(*((int32_t *)ip)); ip+=5;} else ip+=4; DISPATCH();
+      case_OP_WHILE_START: 
+         if(!(*ptr))
+            ip = code->code+(*((int32_t *)ip));
+         else
+            ip+=4;
+         DISPATCH();
       case_OP_WHILE_END: ip = code->code+(*((int32_t *)ip)); DISPATCH();
 
       case_OP_EXIT: return;
