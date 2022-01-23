@@ -1,5 +1,5 @@
 /*
-brainfuck interpreter
+brainfuck interpreter/transpiler
 
 Written in 2021,2022 by Lukas Holzbeierlein (Captain4LK) email: captain4lk [at] tutanota [dot] com
 
@@ -132,10 +132,9 @@ int main(int argc, char *argv[])
       return 0;
    }
 
+   //Compile code
    Bytecode code = {0};
    bytecode_init(&code);
-
-   //Read input file, remove all invalid characters, compile code
    FILE *in = fopen(path,"r");
    compile(in,&code);
    fclose(in);
@@ -143,7 +142,7 @@ int main(int argc, char *argv[])
    //Performe some optimizations
    optimize(&code);
 
-   //Dump code in desired format (if at all)
+   //Dump code in desired format (if at all) and terminate after
    if(dump!=NULL)
    {
       if(strcmp(dump,"IR")==0)
@@ -161,6 +160,7 @@ int main(int argc, char *argv[])
    if(path_io!=NULL)
       input = fopen(path_io,"r");
 
+   //Run code
    bytecode_run(&code,input);
 
    //Cleanup
@@ -409,9 +409,10 @@ static void optimize(Bytecode *code)
 static void print_help(char **argv)
 {
    printf("%s usage:\n"
-          "%s -f filename [-i filename]\n"
-          "   -f\tfile to execute\n"
-          "   -i\tfile to read input from\n",
+          "%s -f filename [-i filename] [-dump FORMAT]\n"
+          "   -f    file to execute\n"
+          "   -i    file to read input from\n"
+          "   -dump dump bytecode in specified format (C, IR, bf)\n",
          argv[0],argv[0]);
 }
 
