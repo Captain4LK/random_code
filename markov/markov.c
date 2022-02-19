@@ -32,6 +32,13 @@ typedef struct
    unsigned data_used;
    unsigned data_size;
 }String_array;
+
+typedef struct
+{
+   String_array *support;
+   int order;
+   double prior;
+}Markov_model;
 //-------------------------------------
 
 //Variables
@@ -43,6 +50,8 @@ static char *file_read(const char *path);
 
 static void string_array_add(String_array *array, const char *str);
 static void string_array_add_unique(String_array *array, const char *str);
+static void markov_model_create(Markov_model *model, String_array *support, int order, double prior);
+static void markov_model_observe(Markov_model *model, const char *str);
 //-------------------------------------
 
 //Function implementations
@@ -86,7 +95,10 @@ int main(int argc, char **argv)
    free(file);
 
    //Create model
-
+   Markov_model model = {0};
+   markov_model_create(&model,&support,3,0.001);
+   for(int i = 0;i<lines.data_used;i++)
+      markov_model_observe(&model,lines.data[i]);
 
    return 0;
 }
@@ -157,6 +169,29 @@ static void string_array_add_unique(String_array *array, const char *str)
    {
       array->data_size+=16;
       array->data = realloc(array->data,sizeof(*array->data)*array->data_size);
+   }
+}
+
+static void markov_model_create(Markov_model *model, String_array *support, int order, double prior)
+{
+   model->support = support;
+   model->order = order;
+   model->prior = prior;
+}
+
+static void markov_model_observe(Markov_model *model, const char *str)
+{
+   int len = strlen(str);
+   for(int i = model->order;i<len;i++)
+   {
+      char context[model->order+1];
+      strncpy(context,(str+i-model->order),model->order);
+      context[model->order] = '\0';
+      char event = str[i];
+
+      for(int j = 0;j<=model->order;j++)
+      {
+      }
    }
 }
 //-------------------------------------
