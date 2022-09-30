@@ -14,6 +14,7 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 #include <stdint.h>
 #include <string.h>
 #include <stdint.h>
+#include <math.h>
 #include <wiringPi.h>
 
 #define CUTE_SYNC_IMPLEMENTATION
@@ -51,6 +52,7 @@ static const int stepper_sequence[] =
 };
 
 static int64_t steps[2] = {0,0};
+static float pos[2] = {39,34}; //53:11 fixed point number (one rotation is 2048 --> 11 bits)
 static cute_cv_t wait_cv;
 static cute_mutex_t wait_mutex;
 static int wait = 0;
@@ -94,7 +96,7 @@ void stepper_move(int step0, int step1, int speed0, int speed1)
    cute_thread_t *t0 = cute_thread_create(thread_move,"(null)",m0);
    cute_thread_t *t1 = cute_thread_create(thread_move,"(null)",m1);
 
-   delayMicroseconds(100000);
+   delayMicroseconds(50000);
    cute_lock(&wait_mutex);
    wait = 0;
    cute_cv_wake_all(&wait_cv);
@@ -107,8 +109,86 @@ void stepper_move(int step0, int step1, int speed0, int speed1)
    free(m1);
 }
 
-void stepper_linear_move_to(int x, int y)
+void stepper_linear_move_to(float x, float y)
 {
+   /*float wl = x;
+   float wr = 68.f-x;
+   float h = y;
+
+   float ll = sqrt(wl*wl+h*h);
+   float lr = sqrt(wr*wr+h*h);
+
+   int sl = ll/0.0065;
+   int sr = lr/0.0065;*/
+
+   //double left = pos[0]*0.0065;
+   //double right = pos[1]*0.0065;
+   double spos[2];
+   spos[1] = pos[1];
+   spos[0] = pos[0];
+   double dir[2];
+   dir[0] = x-spos[0];
+   dir[1] = y-spos[1];
+
+   double cpos[2];
+   cpos[0] = pos[0];
+   cpos[1] = pos[1];
+   double wl = pos[0];
+   double wr = 68.f-pos[0];
+   double h = pos[1];
+
+   double ll = sqrt(wl*wl+h*h);
+   double lr = sqrt(wr*wr+h*h);
+
+   cpos[0] = ll/0.0065;;
+   cpos[1] = lr/0.0065;;
+   //printf("%f %f\n",dir[0],dir[1]);
+   for(double t = 0;t<=1;t+=0.01f)
+   {
+      double x = spos[0]+t*dir[0];
+      double y = spos[1]+t*dir[1];
+      double l = sqrt(pow(spos[0]+t*dir[0],2)+pow(spos[1]+t*dir[1],2));
+      double r = sqrt(pow(68.0-x,2)+pow(y,2));
+
+      double sl = l/0.0065;
+      double rl = r/0.0065;
+      printf("%f %f\n",sl,rl);
+      int dl = sl-cpos[0];
+      int dr = rl-cpos[1];
+      cpos[0]=sl;
+      cpos[1]=rl;
+      printf("%d %d\n",dl,dr);
+      stepper_move(dl,-dr,3000,3000);
+      //float l = sqrt(
+      /*float l = pow((1-t),2)*pos[0]+2*t*(1-t)*pos[0]+pow(t,2)*sl;
+      float r = pow((1-t),2)*pos[1]+2*t*(1-t)*pos[1]+pow(t,2)*sr;
+
+      int dl = l-cpos[0];
+      int dr = r-cpos[1];
+      cpos[0]=l;
+      cpos[1]=r;
+      //printf("%d %d\n",dl,dr);
+      stepper_move(dl,-dr,3000,3000);
+      //printf("%f %f\n",l,r);*/
+   }
+   /*int dl = sl-pos[0];
+   int dr = sr-pos[1];
+
+   int speedl = 0;
+   int speedr = 0;
+   if(dl>dr)
+   {
+      speedr = 3000;
+      speedl = (abs(dr)*3000)/abs(dl);
+   }
+   else
+   {
+      speedl = 3000;
+      speedr = (abs(dl)*3000)/abs(dr);
+   }
+
+   printf("%d %d %d %d\n",dl,dr,speedl,speedr);
+   stepper_move(dl,-dr,speedl,speedr);*/
 }
 
 void stepper_move_home(void)
@@ -125,7 +205,6 @@ static int thread_move(void *udata)
       cute_cv_wait(&wait_cv,&wait_mutex);
    cute_unlock(&wait_mutex);
 
-   puts("RUN");
    int phase = 0;
    for(int i = 0;i<abs(mv->steps);i++)
    {

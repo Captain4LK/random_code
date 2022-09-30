@@ -13,7 +13,7 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 #define _STEPPER_H_
 
 void stepper_init(void);
-void stepper_linear_move_to(int x, int y);
+void stepper_linear_move_to(float x, float y);
 void stepper_move(int step0, int step1, int speed0, int speed1);
 void stepper_move_home(void);
 

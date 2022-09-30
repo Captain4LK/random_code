@@ -38,13 +38,13 @@ int main(int argc, char **argv)
 {
    wiringPiSetup();
 
-   //stepper_move(1024,-1024,3000,3000);
-   stepper_move(-1024,0,3000,3000);
-   stepper_move(0,-1024,3000,3000);
-   stepper_move(-1024,0,3000,3000);
-   stepper_move(0,-1024,3000,3000);
-   stepper_move(-1024,0,3000,3000);
-   stepper_move(0,-1024,3000,3000);
+   stepper_init();
+
+   //stepper_move(0,0,3000,3000);
+   stepper_linear_move_to(5,18);
+   delayMicroseconds(100000);
+   //stepper_move(-1024,0,3000,3000);
+   //stepper_move(0,-1024,3000,3000);
    stepper_move_home();
 
    //gpioTerminate();
