@@ -17,8 +17,8 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 //-------------------------------------
 
 //Internal includes
-#include "stepper.h"
 #include "gcode.h"
+#include "stepper.h"
 //-------------------------------------
 
 //#defines
@@ -35,23 +35,47 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 
 //Function implementations
 
-int main(int argc, char **argv)
+void gcode_run(const char *path)
 {
-   wiringPiSetup();
+   FILE *f = fopen(path,"r");
+   int down = 0;
 
-   stepper_init();
+   char buffer[1024];
+   while(fgets(buffer,1024,f))
+   {
+      const char *delim = " \n";
+      char *tok = strtok(buffer,delim);
 
-   //stepper_move(0,0,128,0,0,3000);
-   gcode_run("test.gcode");
-   //stepper_move(-2048,-2a48,3000,3000);
-   //stepper_linear_move_to(100,100);
-   //stepper_linear_move_to(34,30);
-   //delayMicroseconds(100000);
-   //stepper_move(-1024,0,3000,3000);
-   //stepper_move(0,-1024,3000,3000);
-   stepper_move_home();
+      //Move linear
+      if(strcmp(tok,"G1")==0)
+      {
+         float x = 0,y = 0;
+         while((tok = strtok(NULL,delim))!=NULL)
+         {
+            if(tok[0]=='X')
+               sscanf(tok,"X%f",&x);
+            if(tok[0]=='Y')
+               sscanf(tok,"Y%f",&y);
+         }
+      
+         stepper_linear_move_to(x,y);
+      }
+      //Lift pen
+      else if(strcmp(tok,"M5;")==0&&down)
+      {
+         down = 0;
+         stepper_move(0,0,128,0,0,3000);
+      }
+      else if(strcmp(tok,"M6;")==0&&!down)
+      {
+         down = 1;
+         stepper_move(0,0,-128,0,0,3000);
+      }
+   }
 
-   //gpioTerminate();
-   return 0;
+   if(down)
+      stepper_move(0,0,128,0,0,3000);
+
+   fclose(f);
 }
 //-------------------------------------
