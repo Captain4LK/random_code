@@ -54,7 +54,7 @@ static const int stepper_sequence[] =
 
 static int64_t steps[2] = {0,0};
 static int phases[3];
-static float pos[2] = {0,0};
+static double pos[2] = {0,0};
 static cute_cv_t wait_cv;
 static cute_mutex_t wait_mutex;
 static int wait = 0;
@@ -133,11 +133,11 @@ void stepper_move(int step0, int step1, int step2, int speed0, int speed1, int s
 
 void stepper_linear_move_to(float x, float y)
 {
-   float dx = x-pos[0];
-   float dy = y-pos[1];
+   double dx = x-pos[0];
+   double dy = y-pos[1];
 
-   float sx = (dx/55)*2048;
-   float sy = (dy/55)*2048;
+   double sx = (dx/55)*2048;
+   double sy = (dy/55)*2048;
 
    int speed0;
    int speed1;
@@ -154,9 +154,8 @@ void stepper_linear_move_to(float x, float y)
    }
 
    stepper_move((int)-sx,(int)-sy,0,speed0,speed1,0);
-   pos[0] = x;
-   pos[1] = y;
-   //printf("%d %d %d %d\n",(int)sx,(int)sy,speed0,speed1);
+   pos[0] = -steps[0]*0.02685546875;
+   pos[1] = -steps[1]*0.02685546875;
 }
 
 void stepper_move_home(void)
