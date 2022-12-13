@@ -1,2 +1,4 @@
 *.bf
 *.b
+*.vim
+a.out
