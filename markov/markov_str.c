@@ -12,6 +12,10 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 #include <stdio.h>
 #include <stdint.h>
 #include <time.h>
+
+#define OPTPARSE_IMPLEMENTATION
+#define OPTPARSE_API static
+#include "../external/optparse.h"
 //-------------------------------------
 
 //Internal includes
@@ -46,24 +50,47 @@ int main(int argc, char **argv)
    srand(time(NULL));
 
    //Parse cmd arguments
+   struct optparse_long longopts[] =
+   {
+      {"in", 'i', OPTPARSE_REQUIRED},
+      {"gen", 'g', OPTPARSE_REQUIRED},
+      {"text", 't', OPTPARSE_NONE},
+      {"word", 'w', OPTPARSE_NONE},
+      {"help", 'h', OPTPARSE_NONE},
+      {0},
+   };
    const char *path = NULL;
    int mode = 0;
    int gen = 1;
-   for(int i = 1;i<argc;i++)
+
+   int option;
+   struct optparse options;
+   optparse_init(&options, argv);
+   while((option = optparse_long(&options, longopts, NULL))!=-1)
    {
-      if(strcmp(argv[i],"--help")==0||
-         strcmp(argv[i],"-help")==0||
-         strcmp(argv[i],"-h")==0||
-         strcmp(argv[i],"?")==0)
-         print_help(argv);
-      else if(strcmp(argv[i],"-i")==0)
-         path = READ_ARG(i);
-      else if(strcmp(argv[i],"-word")==0)
-         mode = 0;
-      else if(strcmp(argv[i],"-text")==0)
+      switch(option)
+      {
+      case 'i':
+         path = options.optarg;
+         break;
+      case 'g':
+         gen = strtol(options.optarg,NULL,10);
+         break;
+      case 't':
          mode = 1;
-      else if(strcmp(argv[i],"-gen")==0)
-         gen = atoi(READ_ARG(i));
+         break;
+      case 'w':
+         mode = 0;
+         break;
+      case 'h':
+         print_help(argv);
+         exit(EXIT_SUCCESS);
+         break;
+      case '?':
+         fprintf(stderr, "%s: %s\n", argv[0], options.errmsg);
+         exit(EXIT_FAILURE);
+         break;
+      }
    }
 
    if(path==NULL)
@@ -108,7 +135,7 @@ int main(int argc, char **argv)
       char *ptr = file;
       while(*ptr++!='\0')
       {
-         if(*ptr=='\n')
+         if(*ptr=='#')
          {
             *ptr = '\0';
             HLH_markov_model_add(model_word,str);
@@ -118,7 +145,7 @@ int main(int argc, char **argv)
       }
       free(file);
 
-      for(int i = 0;i<1;i++)
+      for(int i = 0;i<gen;i++)
       {
          char *text = HLH_markov_model_generate(model_word);
          puts(text);
@@ -136,7 +163,7 @@ static void print_help(char **argv)
           "%s -i filename [-stats] [-gen NUM]\n"
           "   -i     file to read input from\n"
           "   -word  word generation mode\n"
-          "   -text  text generation mode\n",
+          "   -text  text generation mode\n"
           "   -gen   amount of phrases to generate\n",
          argv[0],argv[0]);
 }
