@@ -34,6 +34,8 @@ typedef struct HLH_markov_context_word HLH_markov_context_word;
 typedef struct HLH_markov_context_char HLH_markov_context_char;
 typedef struct HLH_markov_count HLH_markov_count;
 
+typedef struct HLH_markov_word_node HLH_markov_word_node;
+
 typedef enum
 {
    HLH_MARKOV_CHAR,
@@ -47,43 +49,43 @@ typedef enum
 typedef struct
 {
    char **data;
-   uint32_t data_used;
-   uint32_t data_size;
+   int32_t data_used;
+   int32_t data_size;
 }HLH_markov_str_array;
 
 typedef struct
 {
-   uint32_t *data;
-   uint32_t data_used;
-   uint32_t data_size;
+   int32_t *data;
+   int32_t data_used;
+   int32_t data_size;
 }HLH_markov_u32_array;
 
 typedef struct
 {
    char *data;
-   uint32_t data_used;
-   uint32_t data_size;
+   int32_t data_used;
+   int32_t data_size;
 }HLH_markov_char_array;
 
 typedef struct
 {
    HLH_markov_context_word *data;
-   uint32_t data_used;
-   uint32_t data_size;
+   int32_t data_used;
+   int32_t data_size;
 }HLH_markov_context_word_array;
 
 typedef struct
 {
    HLH_markov_context_char *data;
-   uint32_t data_used;
-   uint32_t data_size;
+   int32_t data_used;
+   int32_t data_size;
 }HLH_markov_context_char_array;
 
 typedef struct
 {
    HLH_markov_count *data;
-   uint32_t data_used;
-   uint32_t data_size;
+   int32_t data_used;
+   int32_t data_size;
 }HLH_markov_count_array;
 
 typedef struct
@@ -96,7 +98,8 @@ typedef struct
 {
    HLH_markov_str_array words[256];
    HLH_markov_u32_array start_words;
-   HLH_markov_context_word_array contexts[256];
+   HLH_markov_word_node *root;
+   //HLH_markov_context_word_array contexts[256];
 }HLH_markov_model_word;
 
 typedef struct
@@ -190,6 +193,28 @@ struct HLH_markov_context_char
    HLH_markov_count_array counts;
 };
 
+struct HLH_markov_word_node
+{
+   //Data
+   uint32_t context[HLH_MARKOV_ORDER_WORD];
+   int32_t context_size;
+   int32_t total;
+   HLH_markov_count_array counts;
+
+   HLH_markov_word_node *left;
+   HLH_markov_word_node *right;
+   int height;
+};
+
+static int32_t _HLH_markov_word_node_cmp(const HLH_markov_word_node * restrict a, const HLH_markov_word_node * restrict b);
+static HLH_markov_word_node *_HLH_markov_word_node_rotl(HLH_markov_word_node *root);
+static HLH_markov_word_node *_HLH_markov_word_node_rotr(HLH_markov_word_node *root);
+static int _HLH_markov_word_node_height(const HLH_markov_word_node *root);
+static HLH_markov_word_node *_HLH_markov_word_node_insert(HLH_markov_word_node *root, uint32_t context[HLH_MARKOV_ORDER_WORD], uint32_t context_size);
+static int _HLH_markov_word_node_balance(const HLH_markov_word_node *root);
+static HLH_markov_word_node *_HLH_markov_word_node_search(HLH_markov_word_node *root, uint32_t context[HLH_MARKOV_ORDER_WORD], uint32_t context_size);
+static void _HLH_markov_word_node_inorder(HLH_markov_word_node *root, int level);
+
 struct HLH_markov_count
 {
    uint32_t count;
@@ -212,8 +237,8 @@ static HLH_markov_context_char *_HLH_markov_context_char_find_or_create(HLH_mark
 static HLH_markov_context_char *_HLH_markov_context_char_find(const HLH_markov_context_char_array *array, char context[HLH_MARKOV_ORDER_CHAR], uint32_t context_size);
 
 static void _HLH_markov_context_word_array_free(HLH_markov_context_word_array *array);
-static HLH_markov_context_word *_HLH_markov_context_word_find_or_create(HLH_markov_context_word_array *array, uint32_t context[HLH_MARKOV_ORDER_WORD], uint32_t context_size);
-static HLH_markov_context_word *_HLH_markov_context_word_find(const HLH_markov_context_word_array *array, uint32_t context[HLH_MARKOV_ORDER_WORD], uint32_t context_size);
+static HLH_markov_word_node *_HLH_markov_context_word_find_or_create(HLH_markov_word_node **root, uint32_t context[HLH_MARKOV_ORDER_WORD], uint32_t context_size);
+static HLH_markov_word_node *_HLH_markov_context_word_find(HLH_markov_word_node *root, uint32_t context[HLH_MARKOV_ORDER_WORD], uint32_t context_size);
 
 static const char *_HLH_markov_model_word_get_word(const HLH_markov_model *model, uint32_t word);
 static uint32_t _HLH_markov_model_word_add_word(HLH_markov_model *model, const char *word);
@@ -266,7 +291,8 @@ static void _HLH_markov_model_delete_char(HLH_markov_model *model)
 
 static void _HLH_markov_model_delete_word(HLH_markov_model *model)
 {
-   for(int i = 0;i<256;i++)
+   //TODO
+   /*for(int i = 0;i<256;i++)
       _HLH_markov_str_array_free(&model->as.mword.words[i]);
 
    _HLH_markov_u32_array_free(&model->as.mword.start_words);
@@ -275,7 +301,7 @@ static void _HLH_markov_model_delete_word(HLH_markov_model *model)
       for(int j = 0;j<model->as.mword.contexts[i].data_used;j++)
          _HLH_markov_count_array_free(&model->as.mword.contexts[i].data[j].counts);
       _HLH_markov_context_word_array_free(&model->as.mword.contexts[i]);
-   }
+   }*/
 }
 
 void HLH_markov_model_add(HLH_markov_model *model, const char *str)
@@ -322,7 +348,7 @@ static char *_HLH_markov_model_generate_word(const HLH_markov_model *model)
       for(int i = 0;i<backoff;i++)
          context[i] = sentence.data[start-i];
       
-      HLH_markov_context_word *model_context = NULL;
+      HLH_markov_word_node *model_context = NULL;
       for(int i = backoff;i>0;i--)
       {
          uint8_t xor = 0;
@@ -336,7 +362,7 @@ static char *_HLH_markov_model_generate_word(const HLH_markov_model *model)
             xor^=(word>>24)&255;
          }
 
-         model_context = _HLH_markov_context_word_find(&model->as.mword.contexts[xor],context,i);
+         model_context = _HLH_markov_context_word_find(model->as.mword.root,context,i);
          if(model_context!=NULL)
             break;
       }
@@ -527,7 +553,9 @@ static void _HLH_markov_model_add_word(HLH_markov_model *model, const char *str)
          xor^=(context[m-1]>>16)&255;
          xor^=(context[m-1]>>24)&255;
 
-         HLH_markov_context_word *model_context = _HLH_markov_context_word_find_or_create(&model->as.mword.contexts[xor],context,m);
+         HLH_markov_word_node *model_context = _HLH_markov_context_word_find_or_create(&model->as.mword.root,context,m);
+         if(model_context==NULL)
+            _HLH_markov_word_node_inorder(model->as.mword.root,0);
          model_context->total++;
          _HLH_markov_count_array_add(&model_context->counts,event);
       }
@@ -758,9 +786,39 @@ static void _HLH_markov_context_word_array_free(HLH_markov_context_word_array *a
    array->data_size = 0;
 }
 
-static HLH_markov_context_word *_HLH_markov_context_word_find_or_create(HLH_markov_context_word_array *array, uint32_t context[HLH_MARKOV_ORDER_WORD], uint32_t context_size)
+static HLH_markov_word_node *_HLH_markov_context_word_find_or_create(HLH_markov_word_node **root, uint32_t context[HLH_MARKOV_ORDER_WORD], uint32_t context_size)
 {
-   if(array->data==NULL)
+   HLH_markov_word_node *n = _HLH_markov_word_node_search(*root,context,context_size);
+   if(n!=NULL)
+      return n;
+
+   *root = _HLH_markov_word_node_insert(*root,context,context_size);
+   //TODO: not ideal
+   return _HLH_markov_word_node_search(*root,context,context_size);
+#if 0
+   HLH_markov_word_node n;
+   memcpy(&n.context,context,sizeof(*context)*context_size);
+   n.context_size = context_size;
+   n.total = 0;
+   memset(&n.counts,0,sizeof(n.counts));
+
+   if(*root==NULL)
+   {
+      *root = HLH_MARKOV_MALLOC(sizeof(**root));
+      memcpy(*root,&n,sizeof(n));
+      return *root;
+      /*memcpy(*root->context,context,sizeof(*context)*context_size);
+      *root->context_size = context_size;
+      *root->total = 0;
+      memset(*node->counts,0,sizeof(*(*node->counts)));*/
+   }
+
+   int cmp = _HLH_markov_word_node_cmp(*root,&n);
+   if(cmp==-1)
+   {
+      //*root->right = 
+   }
+   /*if(array->data==NULL)
    {
       array->data_used = 0;
       array->data_size = 16;
@@ -787,12 +845,16 @@ static HLH_markov_context_word *_HLH_markov_context_word_find_or_create(HLH_mark
       array->data = HLH_MARKOV_REALLOC(array->data,sizeof(*array->data)*array->data_size);
    }
    
-   return &array->data[array->data_used-1];
+   return &array->data[array->data_used-1];*/
+#endif
 }
 
-static HLH_markov_context_word *_HLH_markov_context_word_find(const HLH_markov_context_word_array *array, uint32_t context[HLH_MARKOV_ORDER_WORD], uint32_t context_size)
+static HLH_markov_word_node *_HLH_markov_context_word_find(HLH_markov_word_node *root, uint32_t context[HLH_MARKOV_ORDER_WORD], uint32_t context_size)
 {
-   if(array->data==NULL)
+   return _HLH_markov_word_node_search(root,context,context_size);
+   //if(n!=NULL)
+      //return n;
+   /*if(array->data==NULL)
       return NULL;
 
    for(int i = 0;i<array->data_used;i++)
@@ -803,7 +865,7 @@ static HLH_markov_context_word *_HLH_markov_context_word_find(const HLH_markov_c
          return &array->data[i];
    }
 
-   return NULL;
+   return NULL;*/
 }
 
 static uint32_t _HLH_markov_fnv32a(const char *str)
@@ -841,6 +903,165 @@ static char *_HLH_markov_strtok(char *s, const char *sep)
    src = s;
 
    return p;
+}
+
+static int32_t _HLH_markov_word_node_cmp(const HLH_markov_word_node * restrict a, const HLH_markov_word_node * restrict b)
+{
+   if(a->context_size!=b->context_size)
+      return a->context_size<b->context_size?-1:1;
+
+   for(int i = 0;i<a->context_size;i++)
+      if(a->context[i]!=b->context[i])
+         return a->context[i]<b->context[i]?-1:1;
+
+   return 0;
+}
+
+static HLH_markov_word_node *_HLH_markov_word_node_rotl(HLH_markov_word_node *root)
+{
+   HLH_markov_word_node *r = root->right;
+   root->right = r->left;
+   r->left = root;
+
+   root->height = _HLH_markov_word_node_height(root);
+   r->height = _HLH_markov_word_node_height(r);
+
+   return r;
+}
+
+static HLH_markov_word_node *_HLH_markov_word_node_rotr(HLH_markov_word_node *root)
+{
+   HLH_markov_word_node *l = root->left;
+   root->left = l->right;
+   l->right = root;
+
+   root->height = _HLH_markov_word_node_height(root);
+   l->height = _HLH_markov_word_node_height(l);
+
+   return l;
+}
+
+static int _HLH_markov_word_node_height(const HLH_markov_word_node *root)
+{
+   if(root==NULL)
+      return 0;
+
+   int hl;
+   int hr;
+
+   if(root->left==NULL)
+      hl = 0;
+   else
+      hl = 1+root->left->height;
+
+   if(root->right==NULL)
+      hr = 0;
+   else
+      hr = 1+root->right->height;
+
+   if(hl>hr)
+      return hl;
+   return hr;
+}
+
+static HLH_markov_word_node *_HLH_markov_word_node_insert(HLH_markov_word_node *root, uint32_t context[HLH_MARKOV_ORDER_WORD], uint32_t context_size)
+{
+   HLH_markov_word_node n = {0};
+   memcpy(&n.context,context,sizeof(*context)*context_size);
+   n.context_size = context_size;
+   n.total = 0;
+   memset(&n.counts,0,sizeof(n.counts));
+
+   if(root==NULL)
+   {
+      root = HLH_MARKOV_MALLOC(sizeof(*root));
+      memcpy(root,&n,sizeof(n));
+   }
+   else if(_HLH_markov_word_node_cmp(root,&n)<0)
+   {
+      root->right = _HLH_markov_word_node_insert(root->right,context,context_size);
+
+      if(_HLH_markov_word_node_balance(root)==-2)
+      {
+         if(_HLH_markov_word_node_cmp(&n,root->right)>0)
+         {
+            root = _HLH_markov_word_node_rotl(root);
+         }
+         else
+         {
+            root->right = _HLH_markov_word_node_rotr(root->right);
+            root = _HLH_markov_word_node_rotl(root);
+         }
+      }
+   }
+   else
+   {
+      root->left = _HLH_markov_word_node_insert(root->left,context,context_size);
+
+      if(_HLH_markov_word_node_balance(root)==2)
+      {
+         if(_HLH_markov_word_node_cmp(&n,root->left)<0)
+         {
+            root = _HLH_markov_word_node_rotr(root);
+         }
+         else
+         {
+            root->left = _HLH_markov_word_node_rotl(root->left);
+            root = _HLH_markov_word_node_rotr(root);
+         }
+      }
+   }
+
+   root->height = _HLH_markov_word_node_height(root);
+   return root;
+}
+
+static int _HLH_markov_word_node_balance(const HLH_markov_word_node *root)
+{
+   int hl;
+   int hr;
+
+   if(root->left==NULL)
+      hl = 0;
+   else
+      hl = 1+root->left->height;
+
+   if(root->right==NULL)
+      hr = 0;
+   else
+      hr = 1+root->right->height;
+
+   return hl-hr;
+}
+
+static HLH_markov_word_node *_HLH_markov_word_node_search(HLH_markov_word_node *root, uint32_t context[HLH_MARKOV_ORDER_WORD], uint32_t context_size)
+{
+   HLH_markov_word_node n = {0};
+   memcpy(&n.context,context,sizeof(*context)*context_size);
+   n.context_size = context_size;
+   n.total = 0;
+   memset(&n.counts,0,sizeof(n.counts));
+
+   if(root==NULL)
+      return NULL;
+   int cmp = _HLH_markov_word_node_cmp(&n,root);
+
+   if(cmp>0)
+      return _HLH_markov_word_node_search(root->right,context,context_size);
+   else if(cmp<0)
+      return _HLH_markov_word_node_search(root->left,context,context_size);
+   return root;
+}
+
+static void _HLH_markov_word_node_inorder(HLH_markov_word_node *root, int level)
+{
+   if(root->left!=NULL)
+      _HLH_markov_word_node_inorder(root->left,level+1);
+   //for(int i = 0;i<level;i++)
+      //printf(" ");
+   printf("%d [%u %u %u]\n",root->context_size,root->context[0],root->context[1],root->context[2]);
+   if(root->right!=NULL)
+      _HLH_markov_word_node_inorder(root->right,level+1);
 }
 
 #undef HLH_FNV_32_PRIME 
