@@ -174,7 +174,8 @@ struct HLH_markov_context_char
    char context[HLH_MARKOV_ORDER_CHAR];
    uint32_t context_size;
    uint32_t total;
-   HLH_markov_count_array counts;
+   uint32_t counts[256];
+   //HLH_markov_count_array counts;
 };
 
 struct HLH_markov_word_node
@@ -279,8 +280,8 @@ static void _HLH_markov_model_delete_char(HLH_markov_model *model)
    _HLH_markov_char_array_free(&model->as.mchar.start_chars);
    for(int i = 0;i<256;i++)
    {
-      for(int j = 0;j<model->as.mchar.contexts[i].data_used;j++)
-         _HLH_markov_count_array_free(&model->as.mchar.contexts[i].data[j].counts);
+      //for(int j = 0;j<model->as.mchar.contexts[i].data_used;j++)
+         //_HLH_markov_count_array_free(&model->as.mchar.contexts[i].data[j].counts);
       _HLH_markov_context_char_array_free(&model->as.mchar.contexts[i]);
    }
 }
@@ -453,12 +454,12 @@ static char *_HLH_markov_model_generate_char(const HLH_markov_model *model)
 #if HLH_MARKOV_RANDOM_WEIGHT
          uint32_t num = HLH_MARKOV_RAND()%model_context->total;
          uint32_t cur = 0;
-         for(int i = 0;i<model_context->counts.data_used;i++)
+         for(int i = 0;i<128;i++)
          {
-            cur+=model_context->counts.data[i].count;
-            if(cur>=num)
+            cur+=model_context->counts[i];
+            if(model_context->counts[i]>0&&cur>=num)
             {
-               _HLH_markov_char_array_add(&str,model_context->counts.data[i].item);
+               _HLH_markov_char_array_add(&str,(char)i);
                break;
             }
          }
@@ -502,7 +503,8 @@ static void _HLH_markov_model_add_char(HLH_markov_model *model, const char *str)
 
          HLH_markov_context_char *model_context = _HLH_markov_context_char_find_or_create(&model->as.mchar.contexts[xor],context,m);
          model_context->total++;
-         _HLH_markov_count_array_add(&model_context->counts,event);
+         model_context->counts[(unsigned char)event]++;
+         //_HLH_markov_count_array_add(&model_context->counts,event);
       }
    }
 }
