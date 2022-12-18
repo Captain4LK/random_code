@@ -124,6 +124,7 @@ int main(int argc, char **argv)
          puts(text);
          free(text);
       }
+      printf("size: %d\n",HLH_markov_model_size(model_char));
       HLH_markov_model_delete(model_char);
    }
    else if(mode==1)

@@ -111,6 +111,8 @@ void HLH_markov_model_add(HLH_markov_model *model, const char *str);
 
 char *HLH_markov_model_generate(const HLH_markov_model *model);
 
+int HLH_markov_model_size(const HLH_markov_model *model);
+
 #endif
 
 #ifdef HLH_MARKOV_IMPLEMENTATION
@@ -174,8 +176,7 @@ struct HLH_markov_context_char
    char context[HLH_MARKOV_ORDER_CHAR];
    uint32_t context_size;
    uint32_t total;
-   uint32_t counts[256];
-   //HLH_markov_count_array counts;
+   uint16_t counts[256];
 };
 
 struct HLH_markov_word_node
@@ -239,6 +240,9 @@ static HLH_markov_word_node *_HLH_markov_context_word_find(HLH_markov_word_node 
 
 static const char *_HLH_markov_model_word_get_word(const HLH_markov_model *model, uint32_t word);
 static uint32_t _HLH_markov_model_word_add_word(HLH_markov_model *model, const char *word);
+
+static int _HLH_markov_model_word_size(const HLH_markov_model *model);
+static int _HLH_markov_model_char_size(const HLH_markov_model *model);
 
 //FowlerNollVo Hash
 static uint32_t _HLH_markov_fnv32a(const char *str);
@@ -316,6 +320,15 @@ char *HLH_markov_model_generate(const HLH_markov_model *model)
    else if(model->type==HLH_MARKOV_WORD)
       return _HLH_markov_model_generate_word(model);
    return NULL;
+}
+
+int HLH_markov_model_size(const HLH_markov_model *model)
+{
+   if(model->type==HLH_MARKOV_CHAR)
+      return _HLH_markov_model_char_size(model);
+   else if(model->type==HLH_MARKOV_WORD)
+      return _HLH_markov_model_word_size(model);
+   return 0;
 }
 
 static char *_HLH_markov_model_generate_word(const HLH_markov_model *model)
@@ -503,8 +516,10 @@ static void _HLH_markov_model_add_char(HLH_markov_model *model, const char *str)
 
          HLH_markov_context_char *model_context = _HLH_markov_context_char_find_or_create(&model->as.mchar.contexts[xor],context,m);
          model_context->total++;
-         model_context->counts[(unsigned char)event]++;
-         //_HLH_markov_count_array_add(&model_context->counts,event);
+
+         //Cap
+         if(model_context->counts[(unsigned char)event]<UINT16_MAX)
+            model_context->counts[(unsigned char)event]++;
       }
    }
 }
@@ -782,6 +797,19 @@ static HLH_markov_word_node *_HLH_markov_context_word_find_or_create(HLH_markov_
 static HLH_markov_word_node *_HLH_markov_context_word_find(HLH_markov_word_node *root, uint32_t context[HLH_MARKOV_ORDER_WORD], uint32_t context_size)
 {
    return _HLH_markov_word_node_search(root,context,context_size);
+}
+
+static int _HLH_markov_model_word_size(const HLH_markov_model *model)
+{
+   return 0;
+}
+
+static int _HLH_markov_model_char_size(const HLH_markov_model *model)
+{
+   int size = 0;
+   for(int i = 0;i<256;i++)
+      size+=model->as.mchar.contexts[i].data_used*sizeof(model->as.mchar.contexts[i].data[0]);
+   return size;
 }
 
 static uint32_t _HLH_markov_fnv32a(const char *str)
