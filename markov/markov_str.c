@@ -125,6 +125,18 @@ int main(int argc, char **argv)
          free(text);
       }
       printf("size: %d\n",HLH_markov_model_size(model_char));
+      int max = 0;
+      for(int i = 0;i<256;i++)
+      {
+         for(int j = 0;j<model_char->as.mchar.contexts[i].data_used;j++)
+         {
+            for(int c = 0;c<256;c++)
+            {
+               if(model_char->as.mchar.contexts[i].data[j].counts[c]>max)
+                  max = model_char->as.mchar.contexts[i].data[j].counts[c];
+            }
+         }
+      }
       HLH_markov_model_delete(model_char);
    }
    else if(mode==1)

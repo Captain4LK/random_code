@@ -174,7 +174,7 @@ int HLH_markov_model_size(const HLH_markov_model *model);
 struct HLH_markov_context_char
 {
    char context[HLH_MARKOV_ORDER_CHAR];
-   uint32_t context_size;
+   uint8_t context_size;
    uint32_t total;
    uint16_t counts[256];
 };
@@ -283,11 +283,7 @@ static void _HLH_markov_model_delete_char(HLH_markov_model *model)
 {
    _HLH_markov_char_array_free(&model->as.mchar.start_chars);
    for(int i = 0;i<256;i++)
-   {
-      //for(int j = 0;j<model->as.mchar.contexts[i].data_used;j++)
-         //_HLH_markov_count_array_free(&model->as.mchar.contexts[i].data[j].counts);
       _HLH_markov_context_char_array_free(&model->as.mchar.contexts[i]);
-   }
 }
 
 static void _HLH_markov_model_delete_word(HLH_markov_model *model)
@@ -515,11 +511,13 @@ static void _HLH_markov_model_add_char(HLH_markov_model *model, const char *str)
          xor^=context[m-1];
 
          HLH_markov_context_char *model_context = _HLH_markov_context_char_find_or_create(&model->as.mchar.contexts[xor],context,m);
-         model_context->total++;
 
          //Cap
          if(model_context->counts[(unsigned char)event]<UINT16_MAX)
+         {
             model_context->counts[(unsigned char)event]++;
+            model_context->total++;
+         }
       }
    }
 }
