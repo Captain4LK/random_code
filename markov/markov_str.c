@@ -173,11 +173,11 @@ int main(int argc, char **argv)
 static void print_help(char **argv)
 {
    printf("%s usage:\n"
-          "%s -i filename [-stats] [-gen NUM]\n"
-          "   -i     file to read input from\n"
-          "   -word  word generation mode\n"
-          "   -text  text generation mode\n"
-          "   -gen   amount of phrases to generate\n",
+          "Generate random words/texts with markov chains\n"
+          "   -i        file to read input from\n"
+          "   --word    word generation mode\n"
+          "   --text    text generation mode\n"
+          "   --gen NUM amount of phrases to generate\n",
          argv[0],argv[0]);
 }
 
