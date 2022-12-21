@@ -1,7 +1,7 @@
 /*
 Image quantization using k-means clustering
 
-Written in 2021 by Lukas Holzbeierlein (Captain4LK) email: captain4lk [at] tutanota [dot] com
+Written in 2021,2022 by Lukas Holzbeierlein (Captain4LK) email: captain4lk [at] tutanota [dot] com
 
 To the extent possible under law, the author(s) have dedicated all copyright and related and neighboring rights to this software to the public domain worldwide. This software is distributed without any warranty.
 
@@ -20,7 +20,11 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 #include <time.h>
 
 #define CUTE_PNG_IMPLEMENTATION
-#include "external/cute_png.h"
+#include "../external/cute_png.h"
+
+#define OPTPARSE_IMPLEMENTATION
+#define OPTPARSE_API static
+#include "../external/optparse.h"
 //-------------------------------------
 
 //Internal includes
@@ -44,9 +48,6 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 
 #define MAX(a,b) \
    ((a)>(b)?(a):(b))
-
-#define READ_ARG(I) \
-   ((++(I))<argc?argv[(I)]:NULL)
 //-------------------------------------
 
 //Typedefs
@@ -90,31 +91,52 @@ static void print_help(char **argv);
 
 int main(int argc, char **argv)
 {
-   //Parse cmd arguments
    const char *path_img = NULL;
    const char *path_img_out = NULL;
    const char *path_pal = NULL;
    const char *path_pal_out = NULL;
-   for(int i = 1;i<argc;i++)
+
+   //Parse arguments
+   struct optparse_long longopts[] =
    {
-      if(strcmp(argv[i],"--help")==0||
-         strcmp(argv[i],"-help")==0||
-         strcmp(argv[i],"-h")==0||
-         strcmp(argv[i],"?")==0)
-         print_help(argv);
-      else if(strcmp(argv[i],"--img")==0)
-         path_img = READ_ARG(i);
-      else if(strcmp(argv[i],"--img_out")==0)
-         path_img_out = READ_ARG(i);
-      else if(strcmp(argv[i],"--pal")==0)
-         path_pal = READ_ARG(i);
-      else if(strcmp(argv[i],"--pal_out")==0)
-         path_pal_out = READ_ARG(i);
-      else if(strcmp(argv[i],"--colors")==0)
+      {"pal-out", 'O', OPTPARSE_REQUIRED},
+      {"img-out", 'o', OPTPARSE_REQUIRED},
+      {"pal", 'p', OPTPARSE_REQUIRED},
+      {"img", 'i', OPTPARSE_REQUIRED},
+      {"colors", 'c', OPTPARSE_REQUIRED},
+      {"help", 'h', OPTPARSE_NONE},
+      {0},
+   };
+   int option;
+   struct optparse options;
+   optparse_init(&options, argv);
+   while((option = optparse_long(&options, longopts, NULL))!=-1)
+   {
+      switch(option)
       {
-         char *arg = READ_ARG(i);
-         arg = arg==NULL?"":arg;
-         quant_k = atoi(arg);
+      case 'O':
+         path_pal_out = options.optarg;
+         break;
+      case 'o':
+         path_img_out = options.optarg;
+         break;
+      case 'p':
+         path_pal = options.optarg;
+         break;
+      case 'i':
+         path_img = options.optarg;
+         break;
+      case 'h':
+         print_help(argv);
+         exit(EXIT_SUCCESS);
+         break;
+      case 'c':
+         quant_k = options.optarg?atoi(options.optarg):16;
+         break;
+      case '?':
+         fprintf(stderr, "%s: %s\n", argv[0], options.errmsg);
+         exit(EXIT_FAILURE);
+         break;
       }
    }
 
