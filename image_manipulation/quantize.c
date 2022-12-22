@@ -358,13 +358,12 @@ static double colors_variance(dyn_array *color_list)
 
 static void print_help(char **argv)
 {
-   printf("%s usage:\n"
-          "%s --img filename [--img_out filename] [--pal_out filename]\n"
-          "   --img\timage file to process\n"
-          "   --img_out\tprocessed image\n"
-          "   --pal\tpalette to convert image to\n"
-          "   --pal_out\tgenerated palette\n"
-          "   --colors\ttargeted color amount\n",
-         argv[0],argv[0]);
+   printf("Usage: %s --img PATH [OPTIONS]\n"
+          "   --img PATH     image file to process\n"
+          "   --img-out PATH processed image\n"
+          "   --pal PATH     palette to convert image to\n"
+          "   --pal-out PATH generated palette\n"
+          "   --colors NUM   targeted color amount\n",
+         argv[0]);
 }
 //-------------------------------------
