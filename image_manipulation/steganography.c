@@ -1,7 +1,7 @@
 /*
 Image Steganography
 
-Written in 2021 by Lukas Holzbeierlein (Captain4LK) email: captain4lk [at] tutanota [dot] com
+Written in 2021,2022 by Lukas Holzbeierlein (Captain4LK) email: captain4lk [at] tutanota [dot] com
 
 To the extent possible under law, the author(s) have dedicated all copyright and related and neighboring rights to this software to the public domain worldwide. This software is distributed without any warranty.
 
@@ -15,9 +15,13 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 #include <stdint.h>
 
 #define CUTE_PATH_IMPLEMENTATION
-#include "external/cute_path.h"
+#include "../external/cute_path.h"
 #define CUTE_PNG_IMPLEMENTATION
-#include "external/cute_png.h"
+#include "../external/cute_png.h"
+
+#define OPTPARSE_IMPLEMENTATION
+#define OPTPARSE_API static
+#include "../external/optparse.h"
 //-------------------------------------
 
 //Internal includes
@@ -47,35 +51,64 @@ static void write_u8(uint8_t byte);
 static void write_bit(uint8_t bit);
 static uint8_t read_u8();
 static uint8_t read_bit();
+
+static void print_help(char **argv);
 //-------------------------------------
 
 //Function implementations
 
 int main(int argc, char **argv)
 {
-   //Parse cmd arguments
    const char *path = NULL;
-   const char *image_path = NULL;
+   const char *path_img = NULL;
    int mode = 0;
-   for(int i = 1;i<argc;i++)
+
+   //Parse arguments
+   struct optparse_long longopts[] =
    {
-      if(argv[i][0]=='-')
+      {"encrypt", 'e', OPTPARSE_NONE},
+      {"decrypt", 'd', OPTPARSE_NONE},
+      {"bits", 'b', OPTPARSE_REQUIRED},
+      {"img", 'i', OPTPARSE_REQUIRED},
+      {"file", 'f', OPTPARSE_REQUIRED},
+      {"help", 'h', OPTPARSE_NONE},
+      {0},
+   };
+   int option;
+   struct optparse options;
+   optparse_init(&options, argv);
+   while((option = optparse_long(&options, longopts, NULL))!=-1)
+   {
+      switch(option)
       {
-         switch(argv[i][1])
-         {
-         case 'h': puts("image steganography\nAvailible commandline options:\n\t-h\t\tprint this text\n\t-e\t\tencrypt mode\n\t-d\t\tdecrypt mode\n\t-b [BITS]\tamount of bits to use\n\t-f [PATH]\tinput file\n\t-i [PATH]\tinput image"); break;
-         case 'e': mode = 0; break;
-         case 'd': mode = 1; break;
-         case 'b': bits = atoi(argv[++i]); break;
-         case 'f': path = argv[++i]; break;
-         case 'i': image_path = argv[++i]; break;
-         }
+      case 'e':
+         mode = 0;
+         break;
+      case 'd':
+         mode = 1;
+         break;
+      case 'b':
+         bits = strtol(options.optarg,NULL,10);
+         break;
+      case 'f':
+         path = options.optarg;
+         break;
+      case 'i':
+         path_img = options.optarg;
+         break;
+      case 'h':
+         print_help(argv);
+         exit(EXIT_SUCCESS);
+         break;
+      case '?':
+         fprintf(stderr, "%s: %s\n", argv[0], options.errmsg);
+         exit(EXIT_FAILURE);
+         break;
       }
    }
 
    //Parse input file
-   //Removes all invalid characters
-   if(image_path==NULL)
+   if(path_img==NULL)
    {
       printf("No image file specified, try %s -h for help\n",argv[0]);
       return 0;
@@ -85,7 +118,7 @@ int main(int argc, char **argv)
    if(mode==0)
    {
       //Read data to memory and check
-      img = cp_load_png(image_path);
+      img = cp_load_png(path_img);
       if(img.pix==NULL)
       {
          puts("Failed to load image");
@@ -139,7 +172,7 @@ int main(int argc, char **argv)
    else
    {
       //Read image to memory
-      img = cp_load_png(image_path);
+      img = cp_load_png(path_img);
       if(img.pix==NULL)
       {
          puts("Failed to load image");
@@ -289,5 +322,16 @@ static uint8_t read_bit()
    }
 
    return bit;
+}
+
+static void print_help(char **argv)
+{
+   printf("Usage: %s --img PATH [OPTIONS]\n"
+          "   --img PATH     image file to process\n"
+          "   --img-out PATH processed image\n"
+          "   --pal PATH     palette to convert image to\n"
+          "   --pal-out PATH generated palette\n"
+          "   --colors NUM   targeted color amount\n",
+         argv[0]);
 }
 //-------------------------------------
