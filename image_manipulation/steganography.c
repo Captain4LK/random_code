@@ -327,11 +327,11 @@ static uint8_t read_bit()
 static void print_help(char **argv)
 {
    printf("Usage: %s --img PATH [OPTIONS]\n"
-          "   --img PATH     image file to process\n"
-          "   --img-out PATH processed image\n"
-          "   --pal PATH     palette to convert image to\n"
-          "   --pal-out PATH generated palette\n"
-          "   --colors NUM   targeted color amount\n",
+          "   --img PATH  image file to process\n"
+          "   --file PATH binary file output/input\n"
+          "   --bits NUM  number of bits used to store file\n"
+          "   --encrypt   encrypt file to img\n"
+          "   --decrypt   decrypt img to file\n",
          argv[0]);
 }
 //-------------------------------------
