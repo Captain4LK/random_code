@@ -25,43 +25,22 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 #define OPTPARSE_IMPLEMENTATION
 #define OPTPARSE_API static
 #include "../external/optparse.h"
+
+#define HLH_IMPLEMENTATION
+#include "../single_header/HLH.h"
 //-------------------------------------
 
 //Internal includes
 //-------------------------------------
 
 //#defines
-#define dyn_array_init(type, array, space) \
-   do { ((dyn_array *)(array))->size = (space); ((dyn_array *)(array))->used = 0; ((dyn_array *)(array))->data = malloc(sizeof(type)*(((dyn_array *)(array))->size)); } while(0)
-
-#define dyn_array_free(type, array) \
-   do { if(((dyn_array *)(array))->data) { free(((dyn_array *)(array))->data); ((dyn_array *)(array))->data = NULL; ((dyn_array *)(array))->used = 0; ((dyn_array *)(array))->size = 0; }} while(0)
-
-#define dyn_array_add(type, array, grow, element) \
-   do { ((type *)((dyn_array *)(array)->data))[((dyn_array *)(array))->used] = (element); ((dyn_array *)(array))->used++; if(((dyn_array *)(array))->used==((dyn_array *)(array))->size) { ((dyn_array *)(array))->size+=grow; ((dyn_array *)(array))->data = realloc(((dyn_array *)(array))->data,sizeof(type)*(((dyn_array *)(array))->size)); } } while(0)
-
-#define dyn_array_element(type, array, index) \
-   (((type *)((dyn_array *)(array)->data))[index])
-
-#define MIN(a,b) \
-   ((a)<(b)?(a):(b))
-
-#define MAX(a,b) \
-   ((a)>(b)?(a):(b))
 //-------------------------------------
 
 //Typedefs
-
-typedef struct
-{
-   uint32_t used;
-   uint32_t size;
-   void *data;
-}dyn_array;
 //-------------------------------------
 
 //Variables
-static dyn_array *cluster_list = NULL;
+static cp_pixel_t **cluster_list = NULL;
 static cp_pixel_t *centroid_list = NULL;
 static int *assignment = NULL;
 static int quant_k = 16;
@@ -78,11 +57,11 @@ static void cluster_list_init();
 static void cluster_list_free();
 static void compute_kmeans(cp_image_t *data, int pal_in);
 static void get_cluster_centroid(cp_image_t *data, int pal_in);
-static cp_pixel_t colors_mean(dyn_array *color_list);
+static cp_pixel_t colors_mean(cp_pixel_t *color_list);
 static cp_pixel_t pick_random_color(cp_image_t *data);
 static int nearest_color_idx(cp_pixel_t color, cp_pixel_t *color_list);
 static double distance(cp_pixel_t color0, cp_pixel_t color1);
-static double colors_variance(dyn_array *color_list);
+static double colors_variance(cp_pixel_t *color_list);
 
 static void print_help(char **argv);
 //-------------------------------------
@@ -142,14 +121,15 @@ int main(int argc, char **argv)
 
    if(path_img==NULL)
    {
-      printf("No input file specified, try %s -h for help\n",argv[0]);
+      fprintf(stderr,"No input image specified, try %s -h for help\n",argv[0]);
       return 0;
    }
 
    cp_image_t img = cp_load_png(path_img);
    if(img.pix==NULL)
    {
-      puts("Failed to load image");
+
+      fprintf(stderr,"Couldn't load image '%s'\n",path_img);
       return 0;
    }
 
@@ -205,9 +185,7 @@ static void cluster_list_init()
 {
    cluster_list_free(quant_k);
    
-   cluster_list = malloc(sizeof(*cluster_list)*quant_k);
-   for(int i = 0;i<quant_k;i++)
-      dyn_array_init(cp_pixel_t,&cluster_list[i],2);
+   cluster_list = calloc(sizeof(*cluster_list),quant_k);
 }
 
 static void cluster_list_free()
@@ -216,7 +194,7 @@ static void cluster_list_free()
       return;
 
    for(int i = 0;i<quant_k;i++)
-      dyn_array_free(cp_pixel_t,&cluster_list[i]);
+      HLH_array_free(cluster_list[i]);
 
    free(cluster_list);
    cluster_list = NULL;
@@ -249,15 +227,15 @@ static void compute_kmeans(cp_image_t *data, int pal_in)
       {
          cp_pixel_t color = data->pix[i];
          assignment[i] = nearest_color_idx(color,centroid_list);
-         dyn_array_add(cp_pixel_t,&cluster_list[assignment[i]],1,color);
+         HLH_array_push(cluster_list[assignment[i]],color);
       }
 
       delta_max = 0.0;
       for(int i = 0;i<quant_k;i++)
       {
-         variance = colors_variance(&cluster_list[i]);
+         variance = colors_variance(cluster_list[i]);
          delta = fabs(previous_variance[i]-variance);
-         delta_max = MAX(delta,delta_max);
+         delta_max = HLH_max(delta,delta_max);
          previous_variance[i] = variance;
       }
 
@@ -273,9 +251,9 @@ static void get_cluster_centroid(cp_image_t *data, int pal_in)
 {
    for(int i = 0;i<quant_k;i++)
    {
-      if(cluster_list[i].used>0)
+      if(HLH_array_length(cluster_list[i])>0)
       {
-         centroid_list[i] = colors_mean(&cluster_list[i]);
+         centroid_list[i] = colors_mean(cluster_list[i]);
       }
       else
       {
@@ -287,15 +265,15 @@ static void get_cluster_centroid(cp_image_t *data, int pal_in)
    }
 }
 
-static cp_pixel_t colors_mean(dyn_array *color_list)
+static cp_pixel_t colors_mean(cp_pixel_t *color_list)
 {
    int r = 0,g = 0,b = 0;
-   int length = color_list->used;
+   int length = HLH_array_length(color_list);
    for(int i = 0;i<length;i++)
    {
-      r+=dyn_array_element(cp_pixel_t,color_list,i).r;
-      g+=dyn_array_element(cp_pixel_t,color_list,i).g;
-      b+=dyn_array_element(cp_pixel_t,color_list,i).b;
+      r+=color_list[i].r;
+      g+=color_list[i].g;
+      b+=color_list[i].b;
    }
 
    if(length!=0)
@@ -341,15 +319,15 @@ static double distance(cp_pixel_t color0, cp_pixel_t color1)
    return sqrt(distance)/(3.0*255.0);
 }
 
-static double colors_variance(dyn_array *color_list)
+static double colors_variance(cp_pixel_t *color_list)
 {
-   int length = color_list->used;
+   int length = HLH_array_length(color_list);
    cp_pixel_t mean = colors_mean(color_list);
    double dist = 0.0;
    double dist_sum = 0.0;
    for(int i = 0;i<length;i++)
    {
-      dist = distance(dyn_array_element(cp_pixel_t,color_list,i),mean);
+      dist = distance(color_list[i],mean);
       dist_sum+=dist*dist;
    }
 
@@ -358,7 +336,7 @@ static double colors_variance(dyn_array *color_list)
 
 static void print_help(char **argv)
 {
-   printf("Usage: %s --img PATH [OPTIONS]\n"
+   fprintf(stderr,"Usage: %s --img PATH [OPTIONS]\n"
           "   --img PATH     image file to process\n"
           "   --img-out PATH processed image\n"
           "   --pal PATH     palette to convert image to\n"
