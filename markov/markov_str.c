@@ -24,12 +24,10 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 #define HLH_MARKOV_ORDER_WORD 3
 #define HLH_MARKOV_ORDER_MIN_WORD 2
 #define HLH_MARKOV_IMPLEMENTATION
-#include "HLH_markov.h"
+#include "../single_header/HLH_markov.h"
 //-------------------------------------
 
 //#defines
-#define READ_ARG(I) \
-   ((++(I))<argc?argv[(I)]:NULL)
 //-------------------------------------
 
 //Typedefs
@@ -49,7 +47,7 @@ int main(int argc, char **argv)
 {
    srand(time(NULL));
 
-   //Parse cmd arguments
+   //Parse arguments
    struct optparse_long longopts[] =
    {
       {"in", 'i', OPTPARSE_REQUIRED},
