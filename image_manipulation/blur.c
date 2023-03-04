@@ -56,7 +56,7 @@ typedef struct
 //Function prototypes
 static uint64_t color_u32_to_u64(uint32_t c);
 static uint32_t color_u64_to_u32(uint64_t c);
-void boxblur_line(uint64_t *src, uint64_t *dst, int width, float rad);
+void boxblur_line(const uint64_t * restrict src, uint64_t * restrict dst, int width, float rad);
 static void blur(Image64 *img, float sz);
 //-------------------------------------
 
@@ -83,7 +83,13 @@ int main(int argc, char **argv)
    for(int i = 0;i<img.w*img.h;i++)
       img.data[i] = color_u32_to_u64(img_io.data[i]);
 
-   blur(&img,20.015f);
+   struct timespec tstart;
+   clock_gettime(CLOCK_REALTIME, &tstart);
+   blur(&img,10.015f);
+   struct timespec tend;
+   clock_gettime(CLOCK_REALTIME, &tend);
+   double time_s = (tend.tv_sec-tstart.tv_sec)+(tend.tv_nsec-tstart.tv_nsec)*1e-9;
+   printf("time: %lf s\n",time_s);
 
    for(int i = 0;i<img.w*img.h;i++)
       img_io.data[i] = color_u64_to_u32(img.data[i]);
@@ -128,39 +134,67 @@ static void blur(Image64 *img, float sz)
    img2.h = img->h;
    img2.data = malloc(sizeof(*img2.data)*img2.w*img2.h);
    memcpy(img2.data,img->data,sizeof(*img2.data)*img2.w*img2.h);
+   uint64_t *buffer0 = malloc(sizeof(*buffer0)*img->w);
+   uint64_t *buffer1 = malloc(sizeof(*buffer1)*img->w);
 
+   //Horizontal
    for(int y = 0;y<img->h;y++)
+   {
       boxblur_line(img2.data+y*img->w,img->data+y*img->w,img->w,sz);
+      boxblur_line(img->data+y*img->w,img2.data+y*img->w,img->w,sz);
+      boxblur_line(img2.data+y*img->w,img->data+y*img->w,img->w,sz);
+   }
+
+   //Vertical
+   for(int x = 0;x<img->w;x++)
+   {
+      for(int y = 0;y<img->h;y++)
+         buffer0[y] = img->data[y*img->w+x];
+
+      boxblur_line(buffer0,buffer1,img->h,sz);
+      boxblur_line(buffer1,buffer0,img->h,sz);
+      boxblur_line(buffer0,buffer1,img->h,sz);
+
+      for(int y = 0;y<img->h;y++)
+         img->data[y*img->w+x] = buffer0[y];
+   }
+
+   free(img2.data);
+   free(buffer0);
+   free(buffer1);
 }
 
-void boxblur_line(uint64_t *src, uint64_t *dst, int width, float rad)
+void boxblur_line(const uint64_t * restrict src, uint64_t * restrict dst, int width, float rad)
 {
    int r = (int)rad;
    int32_t alpha = ((int32_t)(rad*64.f))&63;
    int32_t alpha1 = 64-alpha;
    int32_t alpha_total = alpha-alpha1;
-   uint32_t mask = width-1;
    int32_t s1,s2,d;
-   s1 = s2 = -((r+1)/2);
+   s1 = s2 = -((2*r+2)/2);
    d = 0;
 
-   uint64_t pix = src[s2&mask];
-   int32_t sum_r = ((pix>>0)&65535)*(alpha_total);
-   int32_t sum_g = ((pix>>16)&65535)*(alpha_total);
-   int32_t sum_b = ((pix>>32)&65535)*(alpha_total);
-   int32_t sum_a = ((pix>>48)&65535)*(alpha_total);
-
-   int32_t amp = (65536.*64)/HLH_max(1,r*64+alpha*2);
+   int32_t amp_div = HLH_max(1,(2*r+1)*64+alpha*2);
+   int32_t amp = (65536.*64)/HLH_max(1,(2*r+1)*64+alpha*2);
+   //printf("%d\n",amp);
    int32_t amp_clip;
    if(amp>128)
       amp_clip = (((int64_t)65536*65536*64)/amp)-1;
    else
       amp_clip = 0x7fffffff;
 
-   for(int i = 0;i<r;i++)
+   uint64_t pix = src[0];
+   int32_t sum_r = ((pix>>0)&65535)*(alpha_total);
+   int32_t sum_g = ((pix>>16)&65535)*(alpha_total);
+   int32_t sum_b = ((pix>>32)&65535)*(alpha_total);
+   int32_t sum_a = ((pix>>48)&65535)*(alpha_total);
+
+   for(int i = 0;i<r+1;i++)
    {
-      uint64_t pix0 = src[s1&mask];
-      uint64_t pix1 = src[(s1+1)&mask];
+      uint64_t pix0 = src[0];
+      uint64_t pix1 = src[0];
+      //if(i==r) //TODO: maybe?
+         //pix1 = src[1];
       sum_r+=((pix0>>0)&65535)*alpha1+((pix1>>0)&65535)*alpha;
       sum_g+=((pix0>>16)&65535)*alpha1+((pix1>>16)&65535)*alpha;
       sum_b+=((pix0>>32)&65535)*alpha1+((pix1>>32)&65535)*alpha;
@@ -168,26 +202,36 @@ void boxblur_line(uint64_t *src, uint64_t *dst, int width, float rad)
       s1++;
    }
 
-   for(int i = 0;i<width;i++)
+   for(int i = 0;i<r;i++)
    {
-      uint64_t pix0 = src[s1&mask];
-      uint64_t pix1 = src[(s1+1)&mask];
+      uint64_t pix0 = src[s1];
+      uint64_t pix1 = src[s1+1];
+      sum_r+=((pix0>>0)&65535)*alpha1+((pix1>>0)&65535)*alpha;
+      sum_g+=((pix0>>16)&65535)*alpha1+((pix1>>16)&65535)*alpha;
+      sum_b+=((pix0>>32)&65535)*alpha1+((pix1>>32)&65535)*alpha;
+      sum_a+=((pix0>>48)&65535)*alpha1+((pix1>>48)&65535)*alpha;
+      s1++;
+   }
+
+   for(int i = 0;i<=r;i++)
+   {
+      uint64_t pix0 = src[s1];
+      uint64_t pix1 = src[s1+1];
       sum_r+=((pix0>>0)&65535)*alpha1+((pix1>>0)&65535)*alpha;
       sum_g+=((pix0>>16)&65535)*alpha1+((pix1>>16)&65535)*alpha;
       sum_b+=((pix0>>32)&65535)*alpha1+((pix1>>32)&65535)*alpha;
       sum_a+=((pix0>>48)&65535)*alpha1+((pix1>>48)&65535)*alpha;
       s1++;
 
-      uint64_t cr = (((int64_t)sum_r*amp)/(65536*64))&0x7fff;
-      uint64_t cg = (((int64_t)sum_g*amp)/(65536*64))&0x7fff;
-      uint64_t cb = (((int64_t)sum_b*amp)/(65536*64))&0x7fff;
-      uint64_t ca = (((int64_t)sum_a*amp)/(65536*64))&0x7fff;
-      //printf("%d %d %d %d\n",cr,cg,cb,ca);
+      uint64_t cr = (((uint64_t)sum_r*amp)/(65536*64));
+      uint64_t cg = (((uint64_t)sum_g*amp)/(65536*64));
+      uint64_t cb = (((uint64_t)sum_b*amp)/(65536*64));
+      uint64_t ca = (((uint64_t)sum_a*amp)/(65536*64));
       dst[d] = cr|(cg<<16)|(cb<<32)|(ca<<48);
       d++;
 
-      pix0 = src[s2&mask];
-      pix1 = src[(s2+1)&mask];
+      pix0 = src[0];
+      pix1 = src[0];
       sum_r-=((pix0>>0)&65535)*alpha+((pix1>>0)&65535)*alpha1;
       sum_g-=((pix0>>16)&65535)*alpha+((pix1>>16)&65535)*alpha1;
       sum_b-=((pix0>>32)&65535)*alpha+((pix1>>32)&65535)*alpha1;
@@ -195,131 +239,56 @@ void boxblur_line(uint64_t *src, uint64_t *dst, int width, float rad)
       s2++;
    }
 
-   //int32_t frf = rad*256.-r*256.;
-   //int32_t iarrf = (1./(rad+rad+1.))*256;
-   //float fr = rad-r;
-   //float iarr = 1.f/(rad+rad+1.f);
-
-   //#pragma omp parallel for schedule(dynamic, 1)
-   /*for(int i = 0;i<src->height;i++)
+   for(int i = r+1;i<width-r;i++)
    {
-      int ti = i*src->width;
-      int li = ti;
-      int ri = ti+r;
+      uint64_t pix0 = src[s1];
+      uint64_t pix1 = src[s1+1];
+      sum_r+=((pix0>>0)&65535)*alpha1+((pix1>>0)&65535)*alpha;
+      sum_g+=((pix0>>16)&65535)*alpha1+((pix1>>16)&65535)*alpha;
+      sum_b+=((pix0>>32)&65535)*alpha1+((pix1>>32)&65535)*alpha;
+      sum_a+=((pix0>>48)&65535)*alpha1+((pix1>>48)&65535)*alpha;
+      s1++;
 
-      uint64_t pix = src->data[ti];
-      int16_t fv_r = (pix>>0)&65535;
-      int16_t fv_g = (pix>>16)&65535;
-      int16_t fv_b = (pix>>32)&65535;
-      int16_t fv_a = (pix>>48)&65535;
-      //int fv_r = ((int32_t)src->data[ti].rgb.r)<<8;
-      //int fv_g = ((int32_t)src->data[ti].rgb.g)<<8;
-      //int fv_b = ((int32_t)src->data[ti].rgb.b)<<8;
+      uint64_t cr = (((uint64_t)sum_r*amp)/(65536*64));
+      uint64_t cg = (((uint64_t)sum_g*amp)/(65536*64));
+      uint64_t cb = (((uint64_t)sum_b*amp)/(65536*64));
+      uint64_t ca = (((uint64_t)sum_a*amp)/(65536*64));
+      dst[d] = cr|(cg<<16)|(cb<<32)|(ca<<48);
+      d++;
 
-      pix = src->data[ti+src->w-1];
-      int16_t lv_r = (pix>>0)&65535;
-      int16_t lv_g = (pix>>16)&65535;
-      int16_t lv_b = (pix>>32)&65535;
-      int16_t lv_a = (pix>>48)&65535;
-      //int lv_r = ((int32_t)src->data[ti+src->width-1].rgb.r)<<8;
-      //int lv_g = ((int32_t)src->data[ti+src->width-1].rgb.g)<<8;
-      //int lv_b = ((int32_t)src->data[ti+src->width-1].rgb.b)<<8;
+      pix0 = src[s2];
+      pix1 = src[s2+1];
+      sum_r-=((pix0>>0)&65535)*alpha+((pix1>>0)&65535)*alpha1;
+      sum_g-=((pix0>>16)&65535)*alpha+((pix1>>16)&65535)*alpha1;
+      sum_b-=((pix0>>32)&65535)*alpha+((pix1>>32)&65535)*alpha1;
+      sum_a-=((pix0>>48)&65535)*alpha+((pix1>>48)&65535)*alpha1;
+      s2++;
+   }
 
-      int32_t val_r = (r+1)*fv_r;
-      int32_t val_g = (r+1)*fv_g;
-      int32_t val_b = (r+1)*fv_b;
+   for(int i = width-r;i<width;i++)
+   {
+      uint64_t pix0 = src[width-1];
+      uint64_t pix1 = src[width-1];
+      sum_r+=((pix0>>0)&65535)*alpha1+((pix1>>0)&65535)*alpha;
+      sum_g+=((pix0>>16)&65535)*alpha1+((pix1>>16)&65535)*alpha;
+      sum_b+=((pix0>>32)&65535)*alpha1+((pix1>>32)&65535)*alpha;
+      sum_a+=((pix0>>48)&65535)*alpha1+((pix1>>48)&65535)*alpha;
+      s1++;
 
-      for(int j = 0;j<r;j++)
-      {
-         val_r+=((int32_t)src->data[ti+j].rgb.r)<<8;
-         val_g+=((int32_t)src->data[ti+j].rgb.g)<<8;
-         val_b+=((int32_t)src->data[ti+j].rgb.b)<<8;
-      }
+      uint64_t cr = (((uint64_t)sum_r*amp)/(65536*64));
+      uint64_t cg = (((uint64_t)sum_g*amp)/(65536*64));
+      uint64_t cb = (((uint64_t)sum_b*amp)/(65536*64));
+      uint64_t ca = (((uint64_t)sum_a*amp)/(65536*64));
+      dst[d] = cr|(cg<<16)|(cb<<32)|(ca<<48);
+      d++;
 
-      for(int j = 0;j<=r;j++)
-      {
-         val_r+=(((int32_t)src->data[ri].rgb.r)<<8)-fv_r;
-         val_g+=(((int32_t)src->data[ri].rgb.g)<<8)-fv_g;
-         val_b+=(((int32_t)src->data[ri].rgb.b)<<8)-fv_b;
-
-         int32_t frac_r = frf*((fv_r>>8)+src->data[ri+1].rgb.r);
-         int32_t frac_g = frf*((fv_g>>8)+src->data[ri+1].rgb.g);
-         int32_t frac_b = frf*((fv_b>>8)+src->data[ri+1].rgb.b);
-         dst->data[ti].rgb.r = (iarrf*(val_r+frac_r)+32768)>>16;
-         dst->data[ti].rgb.g = (iarrf*(val_g+frac_g)+32768)>>16;
-         dst->data[ti].rgb.b = (iarrf*(val_b+frac_b)+32768)>>16;
-         //float frac_r = fr*(fv_r+src->data[ri+1].rgb.r);
-         //float frac_g = fr*(fv_g+src->data[ri+1].rgb.g);
-         //float frac_b = fr*(fv_b+src->data[ri+1].rgb.b);
-
-         //dst->data[ti].rgb.r = (val_r+frac_r)*iarr+.5f;
-         //dst->data[ti].rgb.g = (val_g+frac_g)*iarr+.5f;
-         //dst->data[ti].rgb.b = (val_b+frac_b)*iarr+.5f;
-         dst->data[ti].rgb.a = src->data[ti].rgb.a;
-
-         ri++;
-         ti++;
-      }
-
-      //printf("%d %d %d %d\n",li,ti,ri,r);
-      for(int j = r+1;j<src->width-r;j++)
-      {
-         //val_r+=src->data[ri].rgb.r-src->data[li].rgb.r;
-         //val_g+=src->data[ri].rgb.g-src->data[li].rgb.g;
-         //val_b+=src->data[ri].rgb.b-src->data[li].rgb.b;
-
-         val_r+=(((int32_t)(src->data[ri].rgb.r-src->data[li].rgb.r))<<8);
-         val_g+=(((int32_t)(src->data[ri].rgb.g-src->data[li].rgb.g))<<8);
-         val_b+=(((int32_t)(src->data[ri].rgb.b-src->data[li].rgb.b))<<8);
-
-         //float frac_r = fr*(src->data[li].rgb.r+src->data[ri+1].rgb.r);
-         //float frac_g = fr*(src->data[li].rgb.g+src->data[ri+1].rgb.g);
-         //float frac_b = fr*(src->data[li].rgb.b+src->data[ri+1].rgb.b);
-         int32_t frac_r = frf*(src->data[li].rgb.r+src->data[ri+1].rgb.r);
-         int32_t frac_g = frf*(src->data[li].rgb.g+src->data[ri+1].rgb.g);
-         int32_t frac_b = frf*(src->data[li].rgb.b+src->data[ri+1].rgb.b);
-
-         dst->data[ti].rgb.r = (iarrf*(val_r+frac_r)+32768)>>16;
-         dst->data[ti].rgb.g = (iarrf*(val_g+frac_g)+32768)>>16;
-         dst->data[ti].rgb.b = (iarrf*(val_b+frac_b)+32768)>>16;
-         //dst->data[ti].rgb.r = (val_r+frac_r)*iarr+.5f;
-         //dst->data[ti].rgb.g = (val_g+frac_g)*iarr+.5f;
-         //dst->data[ti].rgb.b = (val_b+frac_b)*iarr+.5f;
-         dst->data[ti].rgb.a = src->data[ti].rgb.a;
-
-         ri++;
-         li++;
-         ti++;
-      }
-
-      for(int j = src->width-r;j<src->width;j++)
-      {
-         //val_r+=lv_r-src->data[li].rgb.r;
-         //val_g+=lv_g-src->data[li].rgb.g;
-         //val_b+=lv_b-src->data[li].rgb.b;
-
-         //float frac_r = fr*(src->data[li].rgb.r+lv_r);
-         //float frac_g = fr*(src->data[li].rgb.g+lv_r);
-         //float frac_b = fr*(src->data[li].rgb.b+lv_r);
-         val_r+=-(((int32_t)src->data[li].rgb.r)<<8)+lv_r;
-         val_g+=-(((int32_t)src->data[li].rgb.g)<<8)+lv_g;
-         val_b+=-(((int32_t)src->data[li].rgb.b)<<8)+lv_b;
-
-         int32_t frac_r = frf*((lv_r>>8)+src->data[li].rgb.r);
-         int32_t frac_g = frf*((lv_g>>8)+src->data[li].rgb.g);
-         int32_t frac_b = frf*((lv_b>>8)+src->data[li].rgb.b);
-
-         dst->data[ti].rgb.r = (iarrf*(val_r+frac_r)+32768)>>16;
-         dst->data[ti].rgb.g = (iarrf*(val_g+frac_g)+32768)>>16;
-         dst->data[ti].rgb.b = (iarrf*(val_b+frac_b)+32768)>>16;
-         //dst->data[ti].rgb.r = (val_r+frac_r)*iarr+.5f;
-         //dst->data[ti].rgb.g = (val_g+frac_g)*iarr+.5f;
-         //dst->data[ti].rgb.b = (val_b+frac_b)*iarr+.5f;
-         dst->data[ti].rgb.a = src->data[ti].rgb.a;
-
-         li++;
-         ti++;
-      }
-   }*/
+      pix0 = src[s2];
+      pix1 = src[s2+1];
+      sum_r-=((pix0>>0)&65535)*alpha+((pix1>>0)&65535)*alpha1;
+      sum_g-=((pix0>>16)&65535)*alpha+((pix1>>16)&65535)*alpha1;
+      sum_b-=((pix0>>32)&65535)*alpha+((pix1>>32)&65535)*alpha1;
+      sum_a-=((pix0>>48)&65535)*alpha+((pix1>>48)&65535)*alpha1;
+      s2++;
+   }
 }
 //-------------------------------------
