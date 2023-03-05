@@ -56,7 +56,7 @@ typedef struct
 //Function prototypes
 static uint64_t color_u32_to_u64(uint32_t c);
 static uint32_t color_u64_to_u32(uint64_t c);
-void boxblur_line(const uint64_t * restrict src, uint64_t * restrict dst, int width, float rad);
+void boxblur_line(const uint16_t * restrict src, uint16_t * restrict dst, int width, float rad);
 static void blur(Image64 *img, float sz);
 //-------------------------------------
 
@@ -140,9 +140,9 @@ static void blur(Image64 *img, float sz)
    //Horizontal
    for(int y = 0;y<img->h;y++)
    {
-      boxblur_line(img2.data+y*img->w,img->data+y*img->w,img->w,sz);
-      boxblur_line(img->data+y*img->w,img2.data+y*img->w,img->w,sz);
-      boxblur_line(img2.data+y*img->w,img->data+y*img->w,img->w,sz);
+      boxblur_line((uint16_t *)(img2.data+y*img->w),(uint16_t *)(img->data+y*img->w),img->w,sz);
+      boxblur_line((uint16_t *)(img->data+y*img->w),(uint16_t *)(img2.data+y*img->w),img->w,sz);
+      boxblur_line((uint16_t *)(img2.data+y*img->w),(uint16_t *)(img->data+y*img->w),img->w,sz);
    }
 
    //Vertical
@@ -151,9 +151,9 @@ static void blur(Image64 *img, float sz)
       for(int y = 0;y<img->h;y++)
          buffer0[y] = img->data[y*img->w+x];
 
-      boxblur_line(buffer0,buffer1,img->h,sz);
-      boxblur_line(buffer1,buffer0,img->h,sz);
-      boxblur_line(buffer0,buffer1,img->h,sz);
+      boxblur_line((uint16_t *)buffer0,(uint16_t *)buffer1,img->h,sz);
+      boxblur_line((uint16_t *)buffer1,(uint16_t *)buffer0,img->h,sz);
+      boxblur_line((uint16_t *)buffer0,(uint16_t *)buffer1,img->h,sz);
 
       for(int y = 0;y<img->h;y++)
          img->data[y*img->w+x] = buffer0[y];
@@ -164,14 +164,14 @@ static void blur(Image64 *img, float sz)
    free(buffer1);
 }
 
-void boxblur_line(const uint64_t * restrict src, uint64_t * restrict dst, int width, float rad)
+void boxblur_line(const uint16_t * restrict src, uint16_t * restrict dst, int width, float rad)
 {
    int r = (int)rad;
    int32_t alpha = ((int32_t)(rad*64.f))&63;
    int32_t alpha1 = 64-alpha;
    int32_t alpha_total = alpha-alpha1;
    int32_t s1,s2,d;
-   s1 = s2 = -((2*r+2)/2);
+   s1 = s2 = -((2*r+2)/2)*4;
    d = 0;
 
    int32_t amp_div = HLH_max(1,(2*r+1)*64+alpha*2);
@@ -183,112 +183,104 @@ void boxblur_line(const uint64_t * restrict src, uint64_t * restrict dst, int wi
    else
       amp_clip = 0x7fffffff;
 
-   uint64_t pix = src[0];
-   int32_t sum_r = ((pix>>0)&65535)*(alpha_total);
-   int32_t sum_g = ((pix>>16)&65535)*(alpha_total);
-   int32_t sum_b = ((pix>>32)&65535)*(alpha_total);
-   int32_t sum_a = ((pix>>48)&65535)*(alpha_total);
+   int32_t sum_r = src[0]*alpha_total;
+   int32_t sum_g = src[1]*alpha_total;
+   int32_t sum_b = src[2]*alpha_total;
+   int32_t sum_a = src[3]*alpha_total;
 
    for(int i = 0;i<r+1;i++)
    {
-      uint64_t pix0 = src[0];
-      uint64_t pix1 = src[0];
+      sum_r+=src[0]*(alpha+alpha1);
+      sum_g+=src[1]*(alpha+alpha1);
+      sum_b+=src[2]*(alpha+alpha1);
+      sum_a+=src[3]*(alpha+alpha1);
+      s1+=4;
       //if(i==r) //TODO: maybe?
          //pix1 = src[1];
-      sum_r+=((pix0>>0)&65535)*alpha1+((pix1>>0)&65535)*alpha;
-      sum_g+=((pix0>>16)&65535)*alpha1+((pix1>>16)&65535)*alpha;
-      sum_b+=((pix0>>32)&65535)*alpha1+((pix1>>32)&65535)*alpha;
-      sum_a+=((pix0>>48)&65535)*alpha1+((pix1>>48)&65535)*alpha;
-      s1++;
    }
 
    for(int i = 0;i<r;i++)
    {
-      uint64_t pix0 = src[s1];
-      uint64_t pix1 = src[s1+1];
-      sum_r+=((pix0>>0)&65535)*alpha1+((pix1>>0)&65535)*alpha;
-      sum_g+=((pix0>>16)&65535)*alpha1+((pix1>>16)&65535)*alpha;
-      sum_b+=((pix0>>32)&65535)*alpha1+((pix1>>32)&65535)*alpha;
-      sum_a+=((pix0>>48)&65535)*alpha1+((pix1>>48)&65535)*alpha;
-      s1++;
+      sum_r+=src[s1]*alpha1+src[s1+4]*alpha;
+      sum_g+=src[s1+1]*alpha1+src[s1+5]*alpha;
+      sum_b+=src[s1+2]*alpha1+src[s1+6]*alpha;
+      sum_a+=src[s1+3]*alpha1+src[s1+7]*alpha;
+      s1+=4;
    }
 
    for(int i = 0;i<=r;i++)
    {
-      uint64_t pix0 = src[s1];
-      uint64_t pix1 = src[s1+1];
-      sum_r+=((pix0>>0)&65535)*alpha1+((pix1>>0)&65535)*alpha;
-      sum_g+=((pix0>>16)&65535)*alpha1+((pix1>>16)&65535)*alpha;
-      sum_b+=((pix0>>32)&65535)*alpha1+((pix1>>32)&65535)*alpha;
-      sum_a+=((pix0>>48)&65535)*alpha1+((pix1>>48)&65535)*alpha;
-      s1++;
+      sum_r+=src[s1]*alpha1+src[s1+4]*alpha;
+      sum_g+=src[s1+1]*alpha1+src[s1+5]*alpha;
+      sum_b+=src[s1+2]*alpha1+src[s1+6]*alpha;
+      sum_a+=src[s1+3]*alpha1+src[s1+7]*alpha;
+      s1+=4;
 
       uint64_t cr = (((uint64_t)sum_r*amp)/(65536*64));
       uint64_t cg = (((uint64_t)sum_g*amp)/(65536*64));
       uint64_t cb = (((uint64_t)sum_b*amp)/(65536*64));
       uint64_t ca = (((uint64_t)sum_a*amp)/(65536*64));
-      dst[d] = cr|(cg<<16)|(cb<<32)|(ca<<48);
-      d++;
+      dst[d] = cr;
+      dst[d+1] = cg;
+      dst[d+2] = cb;
+      dst[d+3] = ca;
+      d+=4;
 
-      pix0 = src[0];
-      pix1 = src[0];
-      sum_r-=((pix0>>0)&65535)*alpha+((pix1>>0)&65535)*alpha1;
-      sum_g-=((pix0>>16)&65535)*alpha+((pix1>>16)&65535)*alpha1;
-      sum_b-=((pix0>>32)&65535)*alpha+((pix1>>32)&65535)*alpha1;
-      sum_a-=((pix0>>48)&65535)*alpha+((pix1>>48)&65535)*alpha1;
-      s2++;
+      sum_r-=src[0]*(alpha+alpha1);
+      sum_g-=src[1]*(alpha+alpha1);
+      sum_b-=src[2]*(alpha+alpha1);
+      sum_a-=src[3]*(alpha+alpha1);
+      s2+=4;
    }
 
    for(int i = r+1;i<width-r;i++)
    {
-      uint64_t pix0 = src[s1];
-      uint64_t pix1 = src[s1+1];
-      sum_r+=((pix0>>0)&65535)*alpha1+((pix1>>0)&65535)*alpha;
-      sum_g+=((pix0>>16)&65535)*alpha1+((pix1>>16)&65535)*alpha;
-      sum_b+=((pix0>>32)&65535)*alpha1+((pix1>>32)&65535)*alpha;
-      sum_a+=((pix0>>48)&65535)*alpha1+((pix1>>48)&65535)*alpha;
-      s1++;
+      sum_r+=src[s1]*alpha1+src[s1+4]*alpha;
+      sum_g+=src[s1+1]*alpha1+src[s1+5]*alpha;
+      sum_b+=src[s1+2]*alpha1+src[s1+6]*alpha;
+      sum_a+=src[s1+3]*alpha1+src[s1+7]*alpha;
+      s1+=4;
 
       uint64_t cr = (((uint64_t)sum_r*amp)/(65536*64));
       uint64_t cg = (((uint64_t)sum_g*amp)/(65536*64));
       uint64_t cb = (((uint64_t)sum_b*amp)/(65536*64));
       uint64_t ca = (((uint64_t)sum_a*amp)/(65536*64));
-      dst[d] = cr|(cg<<16)|(cb<<32)|(ca<<48);
-      d++;
+      dst[d] = cr;
+      dst[d+1] = cg;
+      dst[d+2] = cb;
+      dst[d+3] = ca;
+      d+=4;
 
-      pix0 = src[s2];
-      pix1 = src[s2+1];
-      sum_r-=((pix0>>0)&65535)*alpha+((pix1>>0)&65535)*alpha1;
-      sum_g-=((pix0>>16)&65535)*alpha+((pix1>>16)&65535)*alpha1;
-      sum_b-=((pix0>>32)&65535)*alpha+((pix1>>32)&65535)*alpha1;
-      sum_a-=((pix0>>48)&65535)*alpha+((pix1>>48)&65535)*alpha1;
-      s2++;
+      sum_r-=src[s2]*alpha+src[s2+4]*alpha1;
+      sum_g-=src[s2+1]*alpha+src[s2+5]*alpha1;
+      sum_b-=src[s2+2]*alpha+src[s2+6]*alpha1;
+      sum_a-=src[s2+3]*alpha+src[s2+7]*alpha1;
+      s2+=4;
    }
 
    for(int i = width-r;i<width;i++)
    {
-      uint64_t pix0 = src[width-1];
-      uint64_t pix1 = src[width-1];
-      sum_r+=((pix0>>0)&65535)*alpha1+((pix1>>0)&65535)*alpha;
-      sum_g+=((pix0>>16)&65535)*alpha1+((pix1>>16)&65535)*alpha;
-      sum_b+=((pix0>>32)&65535)*alpha1+((pix1>>32)&65535)*alpha;
-      sum_a+=((pix0>>48)&65535)*alpha1+((pix1>>48)&65535)*alpha;
-      s1++;
+      sum_r+=src[width*4-1]*alpha1+src[width*4-1+4]*alpha;
+      sum_g+=src[width*4-1+1]*alpha1+src[width*4-1+5]*alpha;
+      sum_b+=src[width*4-1+2]*alpha1+src[width*4-1+6]*alpha;
+      sum_a+=src[width*4-1+3]*alpha1+src[width*4-1+7]*alpha;
+      s1+=4;
 
       uint64_t cr = (((uint64_t)sum_r*amp)/(65536*64));
       uint64_t cg = (((uint64_t)sum_g*amp)/(65536*64));
       uint64_t cb = (((uint64_t)sum_b*amp)/(65536*64));
       uint64_t ca = (((uint64_t)sum_a*amp)/(65536*64));
-      dst[d] = cr|(cg<<16)|(cb<<32)|(ca<<48);
-      d++;
+      dst[d] = cr;
+      dst[d+1] = cg;
+      dst[d+2] = cb;
+      dst[d+3] = ca;
+      d+=4;
 
-      pix0 = src[s2];
-      pix1 = src[s2+1];
-      sum_r-=((pix0>>0)&65535)*alpha+((pix1>>0)&65535)*alpha1;
-      sum_g-=((pix0>>16)&65535)*alpha+((pix1>>16)&65535)*alpha1;
-      sum_b-=((pix0>>32)&65535)*alpha+((pix1>>32)&65535)*alpha1;
-      sum_a-=((pix0>>48)&65535)*alpha+((pix1>>48)&65535)*alpha1;
-      s2++;
+      sum_r-=src[s2]*alpha+src[s2+4]*alpha1;
+      sum_g-=src[s2+1]*alpha+src[s2+5]*alpha1;
+      sum_b-=src[s2+2]*alpha+src[s2+6]*alpha1;
+      sum_a-=src[s2+3]*alpha+src[s2+7]*alpha1;
+      s2+=4;
    }
 }
 //-------------------------------------
