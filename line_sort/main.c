@@ -32,6 +32,8 @@ typedef struct
    int32_t y0;
    int32_t x1;
    int32_t y1;
+   int16_t prev;
+   int16_t next;
    int32_t yfront;
 }Wall;
 //-------------------------------------
@@ -42,27 +44,109 @@ typedef struct
 //Function prototypes
 static int comp_wall_front(const void *a, const void *b);
 static int wall_order(const Wall *wa, const Wall *wb);
+static int16_t wall_insert(Wall *walls, int16_t cur, int16_t insert);
+static int swap(const Wall *wa, const Wall *wb);
 //-------------------------------------
 
 //Function implementations
 
 int main(int argc, char **argv)
 {
-   Wall walls[6] = 
+   Wall walls[8] = 
    {
-      {.x0 = -64,.y0 = 0,.x1 = -48,.y1 = 64,.yfront  = 0},
-      {.x0 = 64,.y0 = 0,.x1 = 48,.y1 = 64,.yfront  = 0},
-      {.x0 = -48,.y0 = 64,.x1 = 48,.y1 = 64,.yfront  = 64},
+      {.x0 = -32,.y0 = 32,.x1 = -24,.y1 = 16,.prev = -1, .next = -1,.yfront = 32},
+      {.x0 = -64,.y0 = 0,.x1 = -48,.y1 = 64,.prev = -1, .next = -1,.yfront = 64},
+      {.x0 = 48,.y0 = 64,.x1 = 64,.y1 = 0,.prev = -1, .next = -1,.yfront = 64},
+      {.x0 = 24,.y0 = 16,.x1 = 32,.y1 = 32,.prev = -1, .next = -1,.yfront =32},
+      {.x0 = -56,.y0 = 16,.x1 = -50,.y1 = 16,.prev = -1, .next = -1,.yfront = 16},
+      {.x0 = -48,.y0 = 64,.x1 = 48,.y1 = 64,.prev = -1, .next = -1,.yfront = 64},
 
-      {.x0 = -32,.y0 = 16,.x1 = -24,.y1 = 32,.yfront  = 16},
-      {.x0 = 24,.y0 = 16,.x1 = 32,.y1 = 32,.yfront  = 16},
-      {.x0 = -24,.y0 = 16,.x1 = 24,.y1 = 16,.yfront  = 16},
+      {.x0 = -24,.y0 = 16,.x1 = 24,.y1 = 16,.prev = -1, .next = -1,.yfront = 16},
+      {.x0 = -89,.y0 = 7,.x1 = -64,.y1 = 7,.prev = -1, .next = -1,.yfront = 7},
+
    };
 
-   int len = 6;
-   qsort(walls,len,sizeof(*walls),comp_wall_front);
+   int len = 8;
+   for(int i = 0;i<len;i++)
+   {
+      if(walls[i].y0>walls[i].y1)
+         walls[i].yfront = walls[i].y0;
+      else
+         walls[i].yfront = walls[i].y1;
+   }
 
-   Wall *stack = NULL;
+   qsort(walls,len,sizeof(*walls),comp_wall_front);
+   for(int i = 0;i<len;i++)
+   {
+      int swaps = 0;
+
+      int j = i+1;
+      while(j<len)
+      {
+         if(wall_order(walls+i,walls+j)!=2)
+         {
+            j++;
+         }
+         else if(i+swaps>j)
+         {
+            puts("SHIT");
+            j++;
+         }
+         else
+         {
+            Wall tmpi = walls[j];
+            for(int w = j;w>i;w--)
+               walls[w] = walls[w-1];
+            walls[i] = tmpi;
+            j = i+1;
+            swaps++;
+         }
+      }
+   }
+
+   for(int i = 0;i<len;i++)
+      printf("(%d %d) --> (%d %d)\n",walls[i].x0,walls[i].y0,walls[i].x1,walls[i].y1);
+   puts("---");
+   /*int sorted = 0;
+   while(!sorted)
+   {
+      sorted = 1;
+      for(int i = 0;i<len-1;i++)
+      {
+         //puts("------");
+         int order = wall_order(walls+i,walls+i+1);
+         if(order==0||order==2)
+            continue;
+         if(order==1)
+         {
+            //puts("SWAP:");
+            //printf("(%d %d) --> (%d %d)\n",walls[i].x0,walls[i].y0,walls[i].x1,walls[i].y1);
+            //printf("(%d %d) --> (%d %d)\n",walls[i+1].x0,walls[i+1].y0,walls[i+1].x1,walls[i+1].y1);
+            Wall tmp = walls[i];
+            walls[i] = walls[i+1];
+            walls[i+1] = tmp;
+            sorted = 0;
+         }
+      }
+   }*/
+   for(int i = 0;i<len;i++)
+      printf("(%d %d) --> (%d %d)\n",walls[i].x0,walls[i].y0,walls[i].x1,walls[i].y1);
+
+   /*Wall *wm = &walls[0];
+   for(int i = 1;i<len;i++)
+   {
+      Wall *wc = &walls[i];
+      int order = wall_order(wm,wc);
+      if(order==1)
+      {
+         wm->next = i;
+         wc->prev = 0;
+      }
+   }*/
+
+   //qsort(walls,len,sizeof(*walls),comp_wall_front);
+
+   /*Wall *stack = NULL;
    Wall *order = NULL;
    HLH_array_push(stack,walls[0]);
 
@@ -109,19 +193,12 @@ int main(int argc, char **argv)
 
    for(int i = 0;i<HLH_array_length(order);i++)
       printf("(%d %d) --> (%d %d)\n",order[i].x0,order[i].y0,order[i].x1,order[i].y1);
-   printf("%d Iterations\n",iters);
+   printf("%d Iterations\n",iters);*/
 
    return 0;
 }
 
-static int comp_wall_front(const void *a, const void *b)
-{
-   const Wall *wa = a;
-   const Wall *wb = b;
-
-   return wa->yfront-wb->yfront;
-}
-
+//-1 no overlap
 //0 --> no obstruction --> order doesn't matter
 //1 --> b first
 //2 --> a first
@@ -147,6 +224,19 @@ static int wall_order(const Wall *wa, const Wall *wb)
    int32_t t0 = ((x10-x00)*y-(y10-y00)*x);
    int32_t t1 = ((x11-x00)*y-(y11-y00)*x);
 
+   /*//No depth overlap
+   if(y00>y11||y01<y10)
+   {
+      if(y00>y10)
+         return 2;
+      return 1;
+   }*/
+
+   if(x00>x11||x01<x10)
+      return 0;
+
+   //if((x00==x10&&y00==y10)
+
    //walls on the same line (identicall or adjacent)
    if(t0==0&&t1==0)
       return 0;
@@ -154,19 +244,28 @@ static int wall_order(const Wall *wa, const Wall *wb)
    //(b,p0) on extension of wall a (shared corner, etc)
    //Set t0 = t1 to trigger RvR_sign_equal check (and for the return !RvR_sign_equal to be correct)
    if(t0==0)
+   {
+      //puts("CASE A");
       t0 = t1;
+      //return 0;
+   }
 
    //(b,p1) on extension of wall a
    //Set t0 = t1 to trigger RvR_sign_equal check
    if(t1==0)
+   {
+      //puts("CASE B");
       t1 = t0;
+      //return 0;
+   }
 
    //Wall either completely to the left or to the right of other wall
    if(sign_equal(t0,t1))
    {
       //Compare with player position relative to wall a
       //if wall b and the player share the same relation, wall a needs to be drawn first
-      t1 = ((0-x00)*y-(0-y00)*x)/1024;
+      t1 = ((0-x00)*y-(0-y00)*x);
+      //printf("%d %d\n",t0,t1);
       return (!sign_equal(t0,t1))+1;
    }
 
@@ -197,5 +296,56 @@ static int wall_order(const Wall *wa, const Wall *wb)
 
    //Invalid case (walls are intersecting), expect rendering glitches
    return 0;
+}
+
+static int16_t wall_insert(Wall *walls, int16_t cur, int16_t insert)
+{
+   if(cur==-1)
+      return insert;
+
+   int order = wall_order(walls+cur,walls+insert);
+   if(order==1||order==0)
+   {
+      walls[insert].next = cur;
+      walls[cur].prev = insert;
+      return insert;
+   }
+   else if(order==2)
+   {
+   }
+}
+
+static int swap(const Wall *wa, const Wall *wb)
+{
+   //x axis overlap
+   if(wa->x1<wb->x0||wa->x0>wb->x1)
+      return 0;
+   //a in front of b
+   /*if()
+      return 0;
+   //b in front of a
+   if()
+      return 0;*/
+}
+
+static int comp_wall_front(const void *a, const void *b)
+{
+   const Wall *wa = a;
+   const Wall *wb = b;
+
+   //No depth overlap
+   /*if(wa->y1<wb->y0||wa->y0>wb->y1)
+   {
+      if(wa->y0>wb->y0)
+         return -1;
+      return 1;
+   }
+   //No x overlap
+   if(wa->x1<wb->x0||wa->x0>wb->x1)
+   {
+   }*/
+
+   //return 0;
+      return wb->yfront-wa->yfront;
 }
 //-------------------------------------
