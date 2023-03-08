@@ -1,5 +1,5 @@
 /*
-Fast line sorting
+(Fast?) line sorting
 
 Written in 2023 by Lukas Holzbeierlein (Captain4LK) email: captain4lk [at] tutanota [dot] com
 
@@ -13,9 +13,6 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
-
-#define HLH_IMPLEMENTATION 
-#include "../single_header/HLH.h"
 //-------------------------------------
 
 //Internal includes
@@ -23,6 +20,8 @@ You should have received a copy of the CC0 Public Domain Dedication along with t
 
 //#defines
 #define sign_equal(a,b) (((a)^(b))>=0)
+#define min(a,b) ((a)<(b)?(a):(b))
+#define max(a,b) ((a)>(b)?(a):(b))
 //-------------------------------------
 
 //Typedefs
@@ -32,8 +31,6 @@ typedef struct
    int32_t y0;
    int32_t x1;
    int32_t y1;
-   int16_t prev;
-   int16_t next;
    int32_t yfront;
 }Wall;
 //-------------------------------------
@@ -44,8 +41,6 @@ typedef struct
 //Function prototypes
 static int comp_wall_front(const void *a, const void *b);
 static int wall_order(const Wall *wa, const Wall *wb);
-static int16_t wall_insert(Wall *walls, int16_t cur, int16_t insert);
-static int swap(const Wall *wa, const Wall *wb);
 //-------------------------------------
 
 //Function implementations
@@ -54,15 +49,15 @@ int main(int argc, char **argv)
 {
    Wall walls[8] = 
    {
-      {.x0 = -32,.y0 = 32,.x1 = -24,.y1 = 16,.prev = -1, .next = -1,.yfront = 32},
-      {.x0 = -64,.y0 = 0,.x1 = -48,.y1 = 64,.prev = -1, .next = -1,.yfront = 64},
-      {.x0 = 48,.y0 = 64,.x1 = 64,.y1 = 0,.prev = -1, .next = -1,.yfront = 64},
-      {.x0 = 24,.y0 = 16,.x1 = 32,.y1 = 32,.prev = -1, .next = -1,.yfront =32},
-      {.x0 = -56,.y0 = 16,.x1 = -50,.y1 = 16,.prev = -1, .next = -1,.yfront = 16},
-      {.x0 = -48,.y0 = 64,.x1 = 48,.y1 = 64,.prev = -1, .next = -1,.yfront = 64},
+      {.x0 = -32,.y0 = 32,.x1 = -24,.y1 = 16,.yfront = 32},
+      {.x0 = -64,.y0 = 0,.x1 = -48,.y1 = 64,.yfront = 64},
+      {.x0 = 48,.y0 = 64,.x1 = 64,.y1 = 0,.yfront = 64},
+      {.x0 = 24,.y0 = 16,.x1 = 32,.y1 = 32,.yfront =32},
+      {.x0 = -56,.y0 = 16,.x1 = -50,.y1 = 16,.yfront = 16},
+      {.x0 = -48,.y0 = 64,.x1 = 48,.y1 = 64,.yfront = 64},
 
-      {.x0 = -24,.y0 = 16,.x1 = 24,.y1 = 16,.prev = -1, .next = -1,.yfront = 16},
-      {.x0 = -89,.y0 = 7,.x1 = -64,.y1 = 7,.prev = -1, .next = -1,.yfront = 7},
+      {.x0 = -24,.y0 = 16,.x1 = 24,.y1 = 16,.yfront = 16},
+      {.x0 = -89,.y0 = 7,.x1 = -64,.y1 = 7,.yfront = 7},
 
    };
 
@@ -76,6 +71,10 @@ int main(int argc, char **argv)
    }
 
    qsort(walls,len,sizeof(*walls),comp_wall_front);
+   for(int i = 0;i<len;i++)
+      printf("(%d %d) --> (%d %d)\n",walls[i].x0,walls[i].y0,walls[i].x1,walls[i].y1);
+   puts("---");
+
    for(int i = 0;i<len;i++)
    {
       int swaps = 0;
@@ -100,100 +99,12 @@ int main(int argc, char **argv)
             walls[i] = tmpi;
             j = i+1;
             swaps++;
+            puts("ROTATE");
          }
       }
    }
-
    for(int i = 0;i<len;i++)
       printf("(%d %d) --> (%d %d)\n",walls[i].x0,walls[i].y0,walls[i].x1,walls[i].y1);
-   puts("---");
-   /*int sorted = 0;
-   while(!sorted)
-   {
-      sorted = 1;
-      for(int i = 0;i<len-1;i++)
-      {
-         //puts("------");
-         int order = wall_order(walls+i,walls+i+1);
-         if(order==0||order==2)
-            continue;
-         if(order==1)
-         {
-            //puts("SWAP:");
-            //printf("(%d %d) --> (%d %d)\n",walls[i].x0,walls[i].y0,walls[i].x1,walls[i].y1);
-            //printf("(%d %d) --> (%d %d)\n",walls[i+1].x0,walls[i+1].y0,walls[i+1].x1,walls[i+1].y1);
-            Wall tmp = walls[i];
-            walls[i] = walls[i+1];
-            walls[i+1] = tmp;
-            sorted = 0;
-         }
-      }
-   }*/
-   for(int i = 0;i<len;i++)
-      printf("(%d %d) --> (%d %d)\n",walls[i].x0,walls[i].y0,walls[i].x1,walls[i].y1);
-
-   /*Wall *wm = &walls[0];
-   for(int i = 1;i<len;i++)
-   {
-      Wall *wc = &walls[i];
-      int order = wall_order(wm,wc);
-      if(order==1)
-      {
-         wm->next = i;
-         wc->prev = 0;
-      }
-   }*/
-
-   //qsort(walls,len,sizeof(*walls),comp_wall_front);
-
-   /*Wall *stack = NULL;
-   Wall *order = NULL;
-   HLH_array_push(stack,walls[0]);
-
-   for(int i = 0;i<6;i++)
-      printf("(%d %d) --> (%d %d)\n",walls[i].x0,walls[i].y0,walls[i].x1,walls[i].y1);
-   puts("--------------------------");
-
-   int next = 1;
-
-   int iters = 0;
-   while(HLH_array_length(stack)>0)
-   {
-      iters++;
-      Wall wc = stack[HLH_array_length(stack)-1];
-
-      //Trivially accept
-      if(next>=len||walls[next].yfront>wc.yfront)
-      {
-         HLH_array_push(order,wc);
-         HLH_array_length_set(stack,HLH_array_length(stack)-1);
-      }
-      else
-      {
-         //Check order of walls
-         int order = wall_order(&wc,&walls[next]);
-         if(order==0||order==2)
-         {
-            stack[HLH_array_length(stack)-1] = walls[next];
-            HLH_array_push(stack,wc);
-         }
-         else if(order==1)
-         {
-            HLH_array_push(stack,walls[next]);
-         }
-         next++;
-      }
-
-      if(HLH_array_length(stack)==0&&next<len)
-      {
-         HLH_array_push(stack,walls[next]);
-         next++;
-      }
-   }
-
-   for(int i = 0;i<HLH_array_length(order);i++)
-      printf("(%d %d) --> (%d %d)\n",order[i].x0,order[i].y0,order[i].x1,order[i].y1);
-   printf("%d Iterations\n",iters);*/
 
    return 0;
 }
@@ -224,18 +135,20 @@ static int wall_order(const Wall *wa, const Wall *wb)
    int32_t t0 = ((x10-x00)*y-(y10-y00)*x);
    int32_t t1 = ((x11-x00)*y-(y11-y00)*x);
 
-   /*//No depth overlap
-   if(y00>y11||y01<y10)
-   {
-      if(y00>y10)
-         return 2;
+   //wa completely behind wb
+   if(max(y00,y01)<min(y10,y11))
       return 1;
-   }*/
 
+   //no overlap
    if(x00>x11||x01<x10)
       return 0;
 
-   //if((x00==x10&&y00==y10)
+   //if(min(y00>y11||y01<y10)
+   //{
+      //if(y00>y10)
+         //return 1;
+      //return 2;
+   //}
 
    //walls on the same line (identicall or adjacent)
    if(t0==0&&t1==0)
@@ -298,54 +211,12 @@ static int wall_order(const Wall *wa, const Wall *wb)
    return 0;
 }
 
-static int16_t wall_insert(Wall *walls, int16_t cur, int16_t insert)
-{
-   if(cur==-1)
-      return insert;
-
-   int order = wall_order(walls+cur,walls+insert);
-   if(order==1||order==0)
-   {
-      walls[insert].next = cur;
-      walls[cur].prev = insert;
-      return insert;
-   }
-   else if(order==2)
-   {
-   }
-}
-
-static int swap(const Wall *wa, const Wall *wb)
-{
-   //x axis overlap
-   if(wa->x1<wb->x0||wa->x0>wb->x1)
-      return 0;
-   //a in front of b
-   /*if()
-      return 0;
-   //b in front of a
-   if()
-      return 0;*/
-}
 
 static int comp_wall_front(const void *a, const void *b)
 {
    const Wall *wa = a;
    const Wall *wb = b;
 
-   //No depth overlap
-   /*if(wa->y1<wb->y0||wa->y0>wb->y1)
-   {
-      if(wa->y0>wb->y0)
-         return -1;
-      return 1;
-   }
-   //No x overlap
-   if(wa->x1<wb->x0||wa->x0>wb->x1)
-   {
-   }*/
-
-   //return 0;
-      return wb->yfront-wa->yfront;
+   return wb->yfront-wa->yfront;
 }
 //-------------------------------------
