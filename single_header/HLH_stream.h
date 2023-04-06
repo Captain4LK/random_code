@@ -3,7 +3,7 @@
 /*
 Data stream abstraction
 
-Written in 2022 by Lukas Holzbeierlein (Captain4LK) email: captain4lk [at] tutanota [dot] com
+Written in 2022,2023 by Lukas Holzbeierlein (Captain4LK) email: captain4lk [at] tutanota [dot] com
 
 To the extent possible under law, the author(s) have dedicated all copyright and related and neighboring rights to this software to the public domain worldwide. This software is distributed without any warranty.
 
@@ -27,6 +27,8 @@ HLH_STREAM_REALLOC
 
 #define _HLH_STREAM_H_
 
+#include <stddef.h>
+
 typedef enum
 {
    HLH_RW_STD_FILE = 0,
@@ -47,7 +49,7 @@ typedef struct HLH_rw HLH_rw;
 typedef void   (*HLH_rw_usr_init)  (HLH_rw *rw, void *data);
 typedef void   (*HLH_rw_usr_close) (HLH_rw *rw);
 typedef void   (*HLH_rw_usr_flush) (HLH_rw *rw);
-typedef int    (*HLH_rw_usr_seek)  (HLH_rw *rw, long offset, int origin);
+typedef int    (*HLH_rw_usr_seek)  (HLH_rw *rw, ptrdiff_t offset, int origin);
 typedef long   (*HLH_rw_usr_tell)  (HLH_rw *rw);
 typedef int    (*HLH_rw_usr_eof)   (HLH_rw *rw);
 typedef size_t (*HLH_rw_usr_read)  (HLH_rw *rw, void *buffer, size_t size, size_t count);
@@ -64,23 +66,23 @@ struct HLH_rw
       struct
       {
          void *mem;
-         long size;
-         long csize;
-         long pos;
+         ptrdiff_t size;
+         ptrdiff_t csize;
+         ptrdiff_t pos;
       }mem;
       struct
       {
          void *mem;
-         long size;
-         long csize;
-         long pos;
-         long min_grow;
+         ptrdiff_t size;
+         ptrdiff_t csize;
+         ptrdiff_t pos;
+         ptrdiff_t min_grow;
       }dmem;
       struct
       {
          const void *mem;
-         long size;
-         long pos;
+         ptrdiff_t size;
+         ptrdiff_t pos;
       }cmem;
       struct
       {
@@ -105,7 +107,7 @@ void HLH_rw_init_usr(HLH_rw *rw, HLH_rw_usr_init init, void *data);
 
 void   HLH_rw_close(HLH_rw *rw);
 void   HLH_rw_flush(HLH_rw *rw);
-int    HLH_rw_seek(HLH_rw *rw, long offset, int origin);
+int    HLH_rw_seek(HLH_rw *rw, ptrdiff_t offset, int origin);
 long   HLH_rw_tell(HLH_rw *rw);
 int    HLH_rw_eof(HLH_rw *rw);
 size_t HLH_rw_read(HLH_rw *rw, void *buffer, size_t size, size_t count);
@@ -408,7 +410,7 @@ size_t HLH_rw_write(HLH_rw *rw, const void *buffer, size_t size, size_t count)
 
       for(size_t i = 0;i<count;i++)
       {
-         if(rw->as.mem.pos+size>rw->as.mem.size)
+         if(rw->as.mem.pos+(ptrdiff_t)size>rw->as.mem.size)
             return 1;
 
          rw->as.mem.csize = HLH_STREAM_MAX(rw->as.mem.csize,rw->as.mem.pos);
@@ -425,7 +427,7 @@ size_t HLH_rw_write(HLH_rw *rw, const void *buffer, size_t size, size_t count)
 
       for(size_t i = 0;i<count;i++)
       {
-         if(rw->as.dmem.pos+size>rw->as.dmem.size)
+         if(rw->as.dmem.pos+(ptrdiff_t)size>rw->as.dmem.size)
          {
             rw->as.dmem.size+=HLH_STREAM_MAX(rw->as.dmem.min_grow,rw->as.dmem.pos+(long)size-rw->as.dmem.size);
             rw->as.dmem.mem = HLH_STREAM_REALLOC(rw->as.dmem.mem,rw->as.dmem.size);
@@ -503,6 +505,7 @@ uint16_t HLH_rw_read_u16(HLH_rw *rw)
       return (b1<<8)|(b0);
    if(rw->endian==HLH_RW_BIG_ENDIAN)
       return (b0<<8)|(b1);
+   return 0;
 }
 
 uint32_t HLH_rw_read_u32(HLH_rw *rw)
@@ -516,6 +519,7 @@ uint32_t HLH_rw_read_u32(HLH_rw *rw)
       return (b3<<24)|(b2<<16)|(b1<<8)|(b0);
    if(rw->endian==HLH_RW_BIG_ENDIAN)
       return (b0<<24)|(b1<<16)|(b2<<8)|(b3);
+   return 0;
 }
 
 uint64_t HLH_rw_read_u64(HLH_rw *rw)
@@ -533,6 +537,7 @@ uint64_t HLH_rw_read_u64(HLH_rw *rw)
       return (b7<<56)|(b6<<48)|(b5<<40)|(b4<<32)|(b3<<24)|(b2<<16)|(b1<<8)|(b0);
    if(rw->endian==HLH_RW_BIG_ENDIAN)
       return (b0<<56)|(b1<<48)|(b2<<40)|(b3<<32)|(b4<<24)|(b5<<16)|(b6<<8)|(b7);
+   return 0;
 }
 
 #undef HLH_STREAM_MAX

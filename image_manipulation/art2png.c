@@ -1,5 +1,5 @@
 /*
-Build engine art format to png converter
+Build engine .art to png converter
 
 Written in 2023 by Lukas Holzbeierlein (Captain4LK) email: captain4lk [at] tutanota [dot] com
 
@@ -8,16 +8,10 @@ To the extent possible under law, the author(s) have dedicated all copyright and
 You should have received a copy of the CC0 Public Domain Dedication along with this software. If not, see <http://creativecommons.org/publicdomain/zero/1.0/>. 
 */
 
-//Based on: https://github.com/ogus/kmeans-quantizer (wtfpl)
-
 //External includes
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <stdint.h>
-#include <math.h>
-#include <inttypes.h>
-#include <time.h>
 
 #define CUTE_PNG_IMPLEMENTATION
 #include "../external/cute_png.h"
@@ -103,9 +97,9 @@ int main(int argc, char **argv)
    HLH_rw_init_file(&rw_pal,f);
    for(int i = 0;i<256;i++)
    {
-      palette[i].r = (HLH_rw_read_u8(&rw_pal));
-      palette[i].g = (HLH_rw_read_u8(&rw_pal));
-      palette[i].b = (HLH_rw_read_u8(&rw_pal));
+      palette[i].r = HLH_rw_read_u8(&rw_pal);
+      palette[i].g = HLH_rw_read_u8(&rw_pal);
+      palette[i].b = HLH_rw_read_u8(&rw_pal);
       palette[i].a = 255;
    }
    HLH_rw_close(&rw_pal);
@@ -127,6 +121,7 @@ int main(int argc, char **argv)
       xdims[i] = HLH_rw_read_u16(&rw_tile);
    for(int i = 0;i<num_tiles;i++)
       ydims[i] = HLH_rw_read_u16(&rw_tile);
+   //Skip attributes
    for(int i = 0;i<num_tiles;i++)
       HLH_rw_read_u32(&rw_tile);
    for(int i = 0;i<num_tiles;i++)
@@ -155,12 +150,11 @@ int main(int argc, char **argv)
 
 static void print_help(char **argv)
 {
-   fprintf(stderr,"Usage: %s --img PATH [OPTIONS]\n"
-          "   --img PATH     image file to process\n"
-          "   --img-out PATH processed image\n"
-          "   --pal PATH     palette to convert image to\n"
-          "   --pal-out PATH generated palette\n"
-          "   --colors NUM   targeted color amount\n",
+   fprintf(stderr,"Usage: %s --dir PATH --file PATH [--palette PATH]\n"
+          "Convert .art files used by build engine to pngs\n"
+          "   --palette PATH     PALETTE.DAT file, vga palette if not set\n"
+          "   --file PATH        .ART file\n"
+          "   --dir PATH         output directory\n",
          argv[0]);
 }
 //-------------------------------------
