@@ -50,6 +50,8 @@ static struct
    cp_pixel_t colors[256];
    int color_count;
 }palette_in = {0};
+
+typedef uint64_t rand_xor[2];
 //-------------------------------------
 
 //Function prototypes
@@ -62,6 +64,12 @@ static cp_pixel_t pick_random_color(cp_image_t *data);
 static int nearest_color_idx(cp_pixel_t color, cp_pixel_t *color_list);
 static double distance(cp_pixel_t color0, cp_pixel_t color1);
 static double colors_variance(cp_pixel_t *color_list);
+
+static cp_pixel_t *choose_centers(cp_image_t *data, int k, uint64_t seed);
+
+static uint64_t rand_murmur3_avalanche64(uint64_t h);
+static void rand_xor_seed(rand_xor *xor, uint64_t seed);
+static uint64_t rand_xor_next(rand_xor *xor);
 
 static void print_help(char **argv);
 //-------------------------------------
@@ -83,9 +91,11 @@ int main(int argc, char **argv)
       {"pal", 'p', OPTPARSE_REQUIRED},
       {"img", 'i', OPTPARSE_REQUIRED},
       {"colors", 'c', OPTPARSE_REQUIRED},
+      {"new", 'n', OPTPARSE_NONE},
       {"help", 'h', OPTPARSE_NONE},
       {0},
    };
+   int new = 0;
    int option;
    struct optparse options;
    optparse_init(&options, argv);
@@ -112,6 +122,9 @@ int main(int argc, char **argv)
       case 'c':
          quant_k = options.optarg?atoi(options.optarg):16;
          break;
+      case 'n':
+         new = 1;
+         break;
       case '?':
          fprintf(stderr, "%s: %s\n", argv[0], options.errmsg);
          exit(EXIT_FAILURE);
@@ -130,6 +143,83 @@ int main(int argc, char **argv)
    {
 
       fprintf(stderr,"Couldn't load image '%s'\n",path_img);
+      return 0;
+   }
+
+   if(new)
+   {
+      srand(time(NULL));
+      uint8_t *asign = NULL;
+      cp_pixel_t *centers = choose_centers(&img,quant_k,time(NULL));
+      cp_pixel_t **clusters = malloc(sizeof(*clusters)*quant_k);
+      memset(clusters,0,sizeof(*clusters)*quant_k);
+      for(int i = 0;i<14;i++)
+      {
+         //Reset clusters
+         for(int j = 0;j<quant_k;j++)
+            HLH_array_length_set(clusters[j],0);
+
+         HLH_array_length_set(asign,0);
+
+         for(int j = 0;j<img.w*img.h;j++)
+         {
+            cp_pixel_t cur = img.pix[j];
+            uint64_t dist_min = UINT64_MAX;
+            int min_i = 0;
+            for(int c = 0;c<HLH_array_length(centers);c++)
+            {
+               uint64_t dist = (cur.r-centers[c].r)*(cur.r-centers[c].r);
+               dist+=(cur.g-centers[c].g)*(cur.g-centers[c].g);
+               dist+=(cur.b-centers[c].b)*(cur.b-centers[c].b);
+
+               if(dist<dist_min)
+               {
+                  dist_min = dist;
+                  min_i = c;
+               }
+            }
+
+            HLH_array_push(clusters[min_i],cur);
+            HLH_array_push(asign,min_i);
+         }
+
+         //Recalculate centers
+         for(int j = 0;j<quant_k;j++)
+         {
+            uint64_t sum_r = 0;
+            uint64_t sum_g = 0;
+            uint64_t sum_b = 0;
+            for(int c = 0;c<HLH_array_length(clusters[j]);c++)
+            {
+               sum_r+=clusters[j][c].r;
+               sum_g+=clusters[j][c].g;
+               sum_b+=clusters[j][c].b;
+            }
+
+            if(HLH_array_length(clusters[j])>0)
+            {
+               centers[j].r = sum_r/HLH_array_length(clusters[j]);
+               centers[j].g = sum_g/HLH_array_length(clusters[j]);
+               centers[j].b = sum_b/HLH_array_length(clusters[j]);
+            }
+            //Choose random data point in that case
+            //Not the best solution but better than not filling these colors
+            else
+            {
+               centers[j] = img.pix[rand()%(img.w*img.h)];
+            }
+         }
+      }
+
+      for(int i = 0;i<HLH_array_length(centers);i++)
+         printf("%d %d %d\n",centers[i].r,centers[i].g,centers[i].b);
+
+      for(int i = 0;i<img.w*img.h;i++)
+         img.pix[i] = centers[asign[i]];
+      cp_save_png(path_img_out,&img);
+
+      HLH_array_free(centers);
+
       return 0;
    }
 
@@ -207,7 +297,7 @@ static void compute_kmeans(cp_image_t *data, int pal_in)
    centroid_list = malloc(sizeof(*centroid_list)*quant_k);
    assignment = malloc(sizeof(*assignment)*(data->w*data->h));
    for(int i = 0;i<(data->w*data->h);i++)
-      assignment[i] = -1.0;
+      assignment[i] = -1;
 
    int iter = 0;
    int max_iter = 16;
@@ -334,6 +424,101 @@ static double colors_variance(cp_pixel_t *color_list)
    return dist_sum/(double)length;
 }
 
+static cp_pixel_t *choose_centers(cp_image_t *data, int k, uint64_t seed)
+{
+   rand_xor rng;
+   rand_xor_seed(&rng,seed);
+
+   cp_pixel_t *centers = NULL;
+
+   //Choose initial center
+   int index = rand_xor_next(&rng)%(data->w*data->h);
+   HLH_array_push(centers,data->pix[index]);
+   
+   uint64_t *distance = NULL;
+   for(int i = 1;i<k;i++)
+   {
+      HLH_array_length_set(distance,0);
+      uint64_t dist_sum = 0;
+      for(int y = 0;y<data->h;y++)
+      {
+         for(int x = 0;x<data->w;x++)
+         {
+            cp_pixel_t cur = data->pix[y*data->w+x];
+            uint64_t dist_min = UINT64_MAX;
+            int center_min = 0;
+            for(int j = 0;j<HLH_array_length(centers);j++)
+            {
+               uint64_t dist = (centers[j].r-cur.r)*(centers[j].r-cur.r);
+               dist+=(centers[j].g-cur.g)*(centers[j].g-cur.g);
+               dist+=(centers[j].b-cur.b)*(centers[j].b-cur.b);
+
+               if(dist<dist_min)
+               {
+                  dist_min = dist;
+                  center_min = j;
+               }
+            }
+
+            dist_sum+=dist_min;
+            HLH_array_push(distance,dist_min);
+         }
+      }
+
+      //Weighted random to choose maximum dist
+      uint64_t random = rand_xor_next(&rng)%dist_sum;
+      uint64_t dist_cur = 0;
+      for(int j = 0;j<data->w*data->h;j++)
+      {
+         dist_cur+=distance[j];
+         if(random<dist_cur)
+         {
+            HLH_array_push(centers,data->pix[j]);
+            break;
+         }
+      }
+   }
+
+   HLH_array_free(distance);
+
+   //for(int i = 0;i<HLH_array_length(centers);i++)
+      //printf("%d %d %d\n",centers[i].r,centers[i].g,centers[i].b);
+
+   return centers;
+}
+
+static uint64_t rand_murmur3_avalanche64(uint64_t h)
+{
+   h ^= h >> 33;
+   h *= 0xff51afd7ed558ccd;
+   h ^= h >> 33;
+   h *= 0xc4ceb9fe1a85ec53;
+   h ^= h >> 33;
+
+   return h;
+}
+
+static void rand_xor_seed(rand_xor *xor, uint64_t seed)
+{
+   uint64_t value = rand_murmur3_avalanche64((seed << 1) | 1);
+   (*xor)[0] = value;
+   value = rand_murmur3_avalanche64(value);
+   (*xor)[1] = value;
+}
+
+static uint64_t rand_xor_next(rand_xor *xor)
+{
+   uint64_t x = (*xor)[0];
+   uint64_t const y = (*xor)[1];
+   (*xor)[0] = y;
+   x ^= x << 23;
+   x ^= x >> 17;
+   x ^= y ^ (y >> 26);
+   (*xor)[1] = x;
+
+   return x + y;
+}
+
 static void print_help(char **argv)
 {
    fprintf(stderr,"Usage: %s --img PATH [OPTIONS]\n"
@@ -344,4 +529,4 @@ static void print_help(char **argv)
           "   --colors NUM   targeted color amount\n",
          argv[0]);
 }
-//-------------------------------------
+//------------------------------------
