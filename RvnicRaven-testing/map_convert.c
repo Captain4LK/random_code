@@ -94,8 +94,8 @@ int main(int argc, char **argv)
       if(sscanf(buffer," sector %" SCNd32 " %" SCNd32 "",&sfloor,&sceiling)==2)
       {
          Sector sn = {0};
-         sn.floor = sfloor;
-         sn.ceiling = sceiling;
+         sn.floor = sfloor*grid;
+         sn.ceiling = sceiling*grid;
          sn.wall_first = HLH_array_length(walls);
          sn.wall_count = 0;
          HLH_array_push(sectors,sn);
