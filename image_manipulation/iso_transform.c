@@ -49,77 +49,215 @@ typedef struct
 //-------------------------------------
 
 //Function prototypes
+static void print_help(char **argv);
+
+static void make_block(Image32 img_in, int tile_size, const char *base_path);
+static void make_block_top(Image32 img_in, int tile_size, const char *base_path);
+static void make_slope0(Image32 img_in, int tile_size, const char *base_path);
 //-------------------------------------
 
 //Function implementations
 
 int main(int argc, char **argv)
 {
+   const char *path_tilemap = NULL;
+   int tile_size = 16;
+
+   //Parse arguments
+   struct optparse_long longopts[] =
+   {
+      {"file", 'f', OPTPARSE_REQUIRED},
+      {"tile", 't', OPTPARSE_REQUIRED},
+      {"help", 'h', OPTPARSE_NONE},
+      {0},
+   };
+
+   int option;
+   struct optparse options;
+   optparse_init(&options, argv);
+   while((option = optparse_long(&options, longopts, NULL))!=-1)
+   {
+      switch(option)
+      {
+      case 'f':
+         path_tilemap = options.optarg;
+         break;
+      case 't':
+         tile_size = strtol(options.optarg,NULL,10);
+         break;
+      case 'h':
+         print_help(argv);
+         exit(EXIT_SUCCESS);
+         break;
+      case '?':
+         fprintf(stderr, "%s: %s\n", argv[0], options.errmsg);
+         exit(EXIT_FAILURE);
+         break;
+      }
+   }
+
+   if(path_tilemap==NULL)
+   {
+      print_help(argv);
+      exit(EXIT_FAILURE);
+   }
+
    int wx,wy,n;
-   unsigned char *data = stbi_load(argv[1], &wx, &wy, &n, 4);
+   unsigned char *data = stbi_load(path_tilemap, &wx, &wy, &n, 4);
    Image32 img_in;
    img_in.w = wx;
    img_in.h = wy;
    img_in.data = (uint32_t *)data;
 
+   make_block(img_in,tile_size,"out");
+   make_block_top(img_in,tile_size,"out");
+   make_block_slope0(img_in,tile_size,"out");
+
+   return 0;
+}
+
+static void make_block(Image32 img_in, int tile_size, const char *base_path)
+{
    Image32 img_out;
-   img_out.w = 32;
-   img_out.h = 32;
+   img_out.w = tile_size*2;
+   img_out.h = tile_size*2;
    img_out.data = malloc(sizeof(*img_out.data)*img_out.w*img_out.h);
    memset(img_out.data,0,sizeof(*img_out.data)*img_out.w*img_out.h);
 
    //Left side
-   int ys = 8;
-   for(int x = 0;x<16;x++)
+   int ys = tile_size/2;
+   for(int x = 0;x<tile_size;x++)
    {
       if(x&1) ys++;
-      for(int y = 0;y<16;y++)
+      for(int y = 0;y<tile_size;y++)
          img_out.data[(y+ys)*img_out.w+x] = img_in.data[y*img_in.w+x];
    }
    
    //Right side
-   ys = 16;
-   for(int x = 0;x<16;x++)
+   ys = tile_size;
+   for(int x = 0;x<tile_size;x++)
    {
       if(x&1) ys--;
-      for(int y = 0;y<16;y++)
-         img_out.data[(y+ys)*img_out.w+x+16] = img_in.data[y*img_in.w+x+17];
+      for(int y = 0;y<tile_size;y++)
+         img_out.data[(y+ys)*img_out.w+x+tile_size] = img_in.data[y*img_in.w+x+(tile_size+1)];
    }
 
    //Top
-   for(int i = 0;i<8;i++)
+   for(int i = 0;i<tile_size/2;i++)
    {
-      for(int x = 0;x<16-2*i;x++)
+      for(int x = 0;x<tile_size-2*i;x++)
       {
-         img_out.data[(x/2+i)*img_out.w+x+15] = img_in.data[i*img_in.w+x+34+i];
-         img_out.data[(x/2+8)*img_out.w+x+1+i*2] = img_in.data[(15-i)*img_in.w+x+34+i];
+         img_out.data[(x/2+i)*img_out.w+x+(tile_size-1)] = img_in.data[i*img_in.w+x+(tile_size+1)*2+i];
+         img_out.data[(x/2+tile_size/2)*img_out.w+x+1+i*2] = img_in.data[((tile_size-1)-i)*img_in.w+x+(tile_size+1)*2+i];
       }
 
-      for(int y = 0;y<16-2*i-2;y++)
+      for(int y = 0;y<tile_size-2*i-2;y++)
       {
-         img_out.data[(7-(y/2))*img_out.w+y+1+2*i] = img_in.data[(15-y-i-1)*img_in.w+i+34];
-         img_out.data[(14-(y/2)-i)*img_out.w+y+17] = img_in.data[(15-y-i-1)*img_in.w+(15-i)+34];
+         img_out.data[((tile_size/2-1)-(y/2))*img_out.w+y+1+2*i] = img_in.data[((tile_size-1)-y-i-1)*img_in.w+i+(tile_size+1)*2];
+         img_out.data[((tile_size-2)-(y/2)-i)*img_out.w+y+(tile_size+1)] = img_in.data[((tile_size-1)-y-i-1)*img_in.w+((tile_size-1)-i)+(tile_size+1)*2];
       }
    }
-   /*int xs = 17;
-   ys = 0;
-   for(int y = 0;y<16;y++)
-   {
-      if((y&1)==0) xs-=2;
-      else ys++;
-
-      for(int x = 0;x<16;x++)
-      {
-         img_out.data[(x/2+ys)*img_out.w+x+xs] = img_in.data[y*img_in.w+x+34];
-      }
-   }*/
 
    cp_image_t img_save;
    img_save.w = img_out.w;
    img_save.h = img_out.h;
    img_save.pix = img_out.data;
-   cp_save_png("out.png",&img_save);
+   char path[512];
+   snprintf(path,512,"%s0.png",base_path);
+   cp_save_png(path,&img_save);
 
-   return 0;
+   free(img_out.data);
+}
+
+static void make_block_top(Image32 img_in, int tile_size, const char *base_path)
+{
+   Image32 img_out;
+   img_out.w = tile_size*2;
+   img_out.h = tile_size+tile_size/4;
+   img_out.data = malloc(sizeof(*img_out.data)*img_out.w*img_out.h);
+   memset(img_out.data,0,sizeof(*img_out.data)*img_out.w*img_out.h);
+
+   //Left side
+   int ys = tile_size/2;
+   for(int x = 0;x<tile_size;x++)
+   {
+      if(x&1) ys++;
+      for(int y = 0;y<tile_size/4;y++)
+         img_out.data[(y+ys)*img_out.w+x] = img_in.data[y*img_in.w+x+(tile_size+1)*3];
+   }
+   
+   //Right side
+   ys = tile_size;
+   for(int x = 0;x<tile_size;x++)
+   {
+      if(x&1) ys--;
+      for(int y = 0;y<tile_size/4;y++)
+         img_out.data[(y+ys)*img_out.w+x+tile_size] = img_in.data[y*img_in.w+x+(tile_size+1)*4];
+   }
+
+   //Top
+   for(int i = 0;i<tile_size/2;i++)
+   {
+      for(int x = 0;x<tile_size-2*i;x++)
+      {
+         img_out.data[(x/2+i)*img_out.w+x+(tile_size-1)] = img_in.data[i*img_in.w+x+(tile_size+1)*2+i];
+         img_out.data[(x/2+tile_size/2)*img_out.w+x+1+i*2] = img_in.data[((tile_size-1)-i)*img_in.w+x+(tile_size+1)*2+i];
+      }
+
+      for(int y = 0;y<tile_size-2*i-2;y++)
+      {
+         img_out.data[((tile_size/2-1)-(y/2))*img_out.w+y+1+2*i] = img_in.data[((tile_size-1)-y-i-1)*img_in.w+i+(tile_size+1)*2];
+         img_out.data[((tile_size-2)-(y/2)-i)*img_out.w+y+(tile_size+1)] = img_in.data[((tile_size-1)-y-i-1)*img_in.w+((tile_size-1)-i)+(tile_size+1)*2];
+      }
+   }
+
+   cp_image_t img_save;
+   img_save.w = img_out.w;
+   img_save.h = img_out.h;
+   img_save.pix = img_out.data;
+   char path[512];
+   snprintf(path,512,"%s1.png",base_path);
+   cp_save_png(path,&img_save);
+
+   free(img_out.data);
+}
+
+static void make_slope0(Image32 img_in, int tile_size, const char *base_path)
+{
+   Image32 img_out;
+   img_out.w = tile_size*2;
+   img_out.h = 2*tile_size+tile_size/4;
+   img_out.data = malloc(sizeof(*img_out.data)*img_out.w*img_out.h);
+   memset(img_out.data,0,sizeof(*img_out.data)*img_out.w*img_out.h);
+
+   //Right side
+   /*ys = tile_size;
+   for(int x = 0;x<tile_size;x++)
+   {
+      if(x&1) ys--;
+      for(int y = 0;y<tile_size;y++)
+         img_out.data[(y+ys)*img_out.w+x+tile_size] = img_in.data[y*img_in.w+x+(tile_size+1)];
+   }*/
+
+   //Slope
+
+   cp_image_t img_save;
+   img_save.w = img_out.w;
+   img_save.h = img_out.h;
+   img_save.pix = img_out.data;
+   char path[512];
+   snprintf(path,512,"%s2.png",base_path);
+   cp_save_png(path,&img_save);
+
+   free(img_out.data);
+}
+
+static void print_help(char **argv)
+{
+   fprintf(stderr,"Usage: %s --file FILE --tile DIM\n"
+          "Convert pixelart to isometric cubes\n"
+          "   --file PATH     tile atlas\n"
+          "   --tile DIM      dimension of tiles\n",
+         argv[0]);
 }
 //-------------------------------------
