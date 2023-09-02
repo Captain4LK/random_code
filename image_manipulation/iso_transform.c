@@ -54,6 +54,7 @@ static void print_help(char **argv);
 static void make_block(Image32 img_in, int tile_size, const char *base_path);
 static void make_block_top(Image32 img_in, int tile_size, const char *base_path);
 static void make_slope0(Image32 img_in, int tile_size, const char *base_path);
+static void make_slope1(Image32 img_in, int tile_size, const char *base_path);
 //-------------------------------------
 
 //Function implementations
@@ -111,7 +112,8 @@ int main(int argc, char **argv)
 
    make_block(img_in,tile_size,"out");
    make_block_top(img_in,tile_size,"out");
-   make_block_slope0(img_in,tile_size,"out");
+   make_slope0(img_in,tile_size,"out");
+   make_slope1(img_in,tile_size,"out");
 
    return 0;
 }
@@ -229,17 +231,56 @@ static void make_slope0(Image32 img_in, int tile_size, const char *base_path)
    img_out.h = 2*tile_size+tile_size/4;
    img_out.data = malloc(sizeof(*img_out.data)*img_out.w*img_out.h);
    memset(img_out.data,0,sizeof(*img_out.data)*img_out.w*img_out.h);
-
+   
    //Right side
-   /*ys = tile_size;
+   int ys = tile_size;
+   for(int x = 0;x<tile_size;x++)
+   {
+      if(x&1) ys--;
+      for(int y = 0;y<tile_size/4;y++)
+         img_out.data[(y+ys)*img_out.w+x+tile_size] = img_in.data[y*img_in.w+x+(tile_size+1)*4];
+   }
+   
+   //Right side
+   ys = tile_size;
    for(int x = 0;x<tile_size;x++)
    {
       if(x&1) ys--;
       for(int y = 0;y<tile_size;y++)
-         img_out.data[(y+ys)*img_out.w+x+tile_size] = img_in.data[y*img_in.w+x+(tile_size+1)];
-   }*/
+         img_out.data[(y+ys+tile_size/4)*img_out.w+x+tile_size] = img_in.data[y*img_in.w+x+(tile_size+1)];
+   }
 
-   //Slope
+   int xs = 0;
+   ys = 27;
+   int dx = 15-0;
+   int dy = 29-0;
+   int error = 2*(dx)+dy;
+   int ty = tile_size*2+tile_size/4-1;
+   for(int i = 0;i<28;i++)
+   {
+      img_out.data[ys*img_out.w+xs] = img_in.data[0];
+      error+=2*dx;
+
+      for(int x = 0;x<tile_size;x++)
+         img_out.data[(ys+(x+(xs&1)+1)/2)*img_out.w+xs+x] = img_in.data[ty*img_in.w+x+(tile_size+1)*5];
+      ty--;
+
+      if(error>0)
+      {
+         error-=2*(dy);
+
+         if(xs&1)
+         {
+            for(int x = 0;x<tile_size;x++)
+               img_out.data[(ys-1+(x+(xs&1)+1)/2)*img_out.w+xs+x] = img_in.data[ty*img_in.w+x+(tile_size+1)*5];
+            ty--;
+         }
+
+         xs++;
+      }
+
+      ys--;
+   }
 
    cp_image_t img_save;
    img_save.w = img_out.w;
@@ -247,6 +288,74 @@ static void make_slope0(Image32 img_in, int tile_size, const char *base_path)
    img_save.pix = img_out.data;
    char path[512];
    snprintf(path,512,"%s2.png",base_path);
+   cp_save_png(path,&img_save);
+
+   free(img_out.data);
+}
+
+static void make_slope1(Image32 img_in, int tile_size, const char *base_path)
+{
+   Image32 img_out;
+   img_out.w = tile_size*2;
+   img_out.h = 2*tile_size+tile_size/4;
+   img_out.data = malloc(sizeof(*img_out.data)*img_out.w*img_out.h);
+   memset(img_out.data,0,sizeof(*img_out.data)*img_out.w*img_out.h);
+
+   //Left side
+   int ys = tile_size/2;
+   for(int x = 0;x<tile_size;x++)
+   {
+      if(x&1) ys++;
+      for(int y = 0;y<tile_size/4;y++)
+         img_out.data[(y+ys)*img_out.w+x] = img_in.data[y*img_in.w+x+(tile_size+1)*3];
+   }
+
+   //Left side
+   ys = tile_size/2;
+   for(int x = 0;x<tile_size;x++)
+   {
+      if(x&1) ys++;
+      for(int y = 0;y<tile_size;y++)
+         img_out.data[(y+ys+tile_size/4)*img_out.w+x] = img_in.data[y*img_in.w+x];
+   }
+   
+   int xs = 32;
+   ys = 27;
+   int dx = 15-0;
+   int dy = 29-0;
+   int error = 2*(dx)+dy;
+   int ty = tile_size*2+tile_size/4-1;
+   for(int i = 0;i<28;i++)
+   {
+      error+=2*dx;
+
+      for(int x = 0;x<tile_size;x++)
+         img_out.data[(ys+(x+(xs&1)+1)/2)*img_out.w+xs-x-1] = img_in.data[ty*img_in.w+(tile_size-1-x)+(tile_size+1)*6];
+      ty--;
+
+      if(error>0)
+      {
+         error-=2*(dy);
+
+         if(xs&1)
+         {
+            for(int x = 0;x<tile_size;x++)
+               img_out.data[(ys-1+(x+(xs&1)+1)/2)*img_out.w+xs-x-1] = img_in.data[ty*img_in.w+(tile_size-1-x)+(tile_size+1)*6];
+            ty--;
+         }
+
+         xs--;
+      }
+
+      ys--;
+   }
+
+   cp_image_t img_save;
+   img_save.w = img_out.w;
+   img_save.h = img_out.h;
+   img_save.pix = img_out.data;
+   char path[512];
+   snprintf(path,512,"%s3.png",base_path);
    cp_save_png(path,&img_save);
 
    free(img_out.data);
