@@ -62,6 +62,9 @@ static void make_slope5(Image32 img_in, int tile_size, const char *base_path);
 static void make_slope6(Image32 img_in, int tile_size, const char *base_path);
 static void make_slope7(Image32 img_in, int tile_size, const char *base_path);
 static void make_slope8(Image32 img_in, int tile_size, const char *base_path);
+static void make_slope9(Image32 img_in, int tile_size, const char *base_path);
+static void make_slope10(Image32 img_in, int tile_size, const char *base_path);
+static void make_slope11(Image32 img_in, int tile_size, const char *base_path);
 
 static void add_wall_left(Image32 img, Image32 tilemap, int ox, int oy, int tile_size);
 static void add_wall_right(Image32 img, Image32 tilemap, int ox, int oy, int tile_size);
@@ -138,6 +141,9 @@ int main(int argc, char **argv)
    make_slope6(img_in,tile_size,"out");
    make_slope7(img_in,tile_size,"out");
    make_slope8(img_in,tile_size,"out");
+   make_slope9(img_in,tile_size,"out");
+   make_slope10(img_in,tile_size,"out");
+   make_slope11(img_in,tile_size,"out");
 
    return 0;
 }
@@ -386,8 +392,8 @@ static void make_slope8(Image32 img_in, int tile_size, const char *base_path)
    img_out.data = malloc(sizeof(*img_out.data)*img_out.w*img_out.h);
    memset(img_out.data,0,sizeof(*img_out.data)*img_out.w*img_out.h);
 
-   add_slope_left(img_out,img_in,0,0,tile_size,-tile_size,0);
-   add_slope_right(img_out,img_in,0,0,tile_size,-tile_size,0);
+   add_slope_left(img_out,img_in,0,0,tile_size,0,tile_size);
+   add_slope_right(img_out,img_in,0,0,tile_size,tile_size,0);
 
    cp_image_t img_save;
    img_save.w = img_out.w;
@@ -395,6 +401,112 @@ static void make_slope8(Image32 img_in, int tile_size, const char *base_path)
    img_save.pix = img_out.data;
    char path[512];
    snprintf(path,512,"%s10.png",base_path);
+   cp_save_png(path,&img_save);
+
+   free(img_out.data);
+}
+
+static void make_slope9(Image32 img_in, int tile_size, const char *base_path)
+{
+   Image32 img_out;
+   img_out.w = tile_size*2;
+   img_out.h = 2*tile_size+tile_size/4;
+   img_out.data = malloc(sizeof(*img_out.data)*img_out.w*img_out.h);
+   memset(img_out.data,0,sizeof(*img_out.data)*img_out.w*img_out.h);
+
+   add_wall_left_upper(img_out,img_in,0,0,tile_size);
+   add_wall_left(img_out,img_in,0,tile_size/4,tile_size);
+   add_slope_right(img_out,img_in,0,0,tile_size,0,0);
+
+   //Remove above
+   int xs = 1;
+   int ys = 6;
+   int dx = 31-xs;
+   int dy = 25-ys;
+   int error = 2*(dy)-dx;
+   for(;xs<img_out.w;xs++)
+   {
+      for(int y = ys;y>=0;y--)
+         img_out.data[y*img_out.w+xs] = 0;
+
+      error+=2*dy;
+      if(error>0)
+      {
+         error-=2*(dx);
+         ys++;
+      }
+   }
+
+   cp_image_t img_save;
+   img_save.w = img_out.w;
+   img_save.h = img_out.h;
+   img_save.pix = img_out.data;
+   char path[512];
+   snprintf(path,512,"%s11.png",base_path);
+   cp_save_png(path,&img_save);
+
+   free(img_out.data);
+}
+
+static void make_slope10(Image32 img_in, int tile_size, const char *base_path)
+{
+   Image32 img_out;
+   img_out.w = tile_size*2;
+   img_out.h = 2*tile_size+tile_size/4;
+   img_out.data = malloc(sizeof(*img_out.data)*img_out.w*img_out.h);
+   memset(img_out.data,0,sizeof(*img_out.data)*img_out.w*img_out.h);
+
+   add_wall_slope_left(img_out,img_in,0,0,tile_size);
+   add_wall_slope_right(img_out,img_in,0,0,tile_size);
+
+   cp_image_t img_save;
+   img_save.w = img_out.w;
+   img_save.h = img_out.h;
+   img_save.pix = img_out.data;
+   char path[512];
+   snprintf(path,512,"%s12.png",base_path);
+   cp_save_png(path,&img_save);
+
+   free(img_out.data);
+}
+
+static void make_slope11(Image32 img_in, int tile_size, const char *base_path)
+{
+   Image32 img_out;
+   img_out.w = tile_size*2;
+   img_out.h = 2*tile_size+tile_size/4;
+   img_out.data = malloc(sizeof(*img_out.data)*img_out.w*img_out.h);
+   memset(img_out.data,0,sizeof(*img_out.data)*img_out.w*img_out.h);
+
+   add_wall_right_upper(img_out,img_in,0,0,tile_size);
+   add_wall_right(img_out,img_in,0,tile_size/4,tile_size);
+   add_slope_left(img_out,img_in,0,0,tile_size,0,0);
+
+   //Remove above
+   int xs = 1;
+   int ys = 26;
+   int dx = 30;
+   int dy = 20;
+   int error = 2*(dy)-dx;
+   for(;xs<img_out.w;xs++)
+   {
+      for(int y = ys;y>=0;y--)
+         img_out.data[y*img_out.w+xs] = 0;
+
+      error+=2*dy;
+      if(error>0)
+      {
+         error-=2*(dx);
+         ys--;
+      }
+   }
+
+   cp_image_t img_save;
+   img_save.w = img_out.w;
+   img_save.h = img_out.h;
+   img_save.pix = img_out.data;
+   char path[512];
+   snprintf(path,512,"%s13.png",base_path);
    cp_save_png(path,&img_save);
 
    free(img_out.data);
@@ -524,7 +636,7 @@ static void add_slope_right(Image32 img, Image32 tilemap, int ox, int oy, int ti
    {
       error+=2*dx;
 
-      for(int x = HLH_max(0,-limit_right+xs);x<tile_size;x++)
+      for(int x = HLH_max(0,-limit_right+xs);x<tile_size&&xs-x>limit_left;x++)
          img.data[(ys+oy+(x+(xs&1)+1)/2)*img.w+xs-x-1+ox] = tilemap.data[ty*tilemap.w+(tile_size-1-x)+(tile_size+1)*6];
       ty--;
 
@@ -534,7 +646,7 @@ static void add_slope_right(Image32 img, Image32 tilemap, int ox, int oy, int ti
 
          if(xs&1)
          {
-            for(int x = HLH_max(0,xs-limit_right);x<tile_size;x++)
+            for(int x = HLH_max(0,xs-limit_right);x<tile_size&&xs-x>limit_left;x++)
                img.data[(ys-1+oy+(x+(xs&1)+1)/2)*img.w+xs-x-1+ox] = tilemap.data[ty*tilemap.w+(tile_size-1-x)+(tile_size+1)*6];
             ty--;
          }
